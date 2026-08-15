@@ -207,3 +207,7 @@ See `CONTRIBUTING.md`.
 The name is a nod to my daughter Anastasia — and to the AI stacks this tool protects.
 
 The utility stands on its own.
+
+## Author
+
+I'm [Joey Victorino](https://joeyvictorino.com). I advise executives, investors, and counsel on consequential technology decisions. Tasia automates part of my published [Local AI Deployment Hardening Checklist](https://joeyvictorino.com/checklist.html).
