@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"regexp"
 
-	"github.com/dzh01/tasia/internal/rules"
+	"github.com/joeyvictorino/tasia/internal/rules"
 )
 
 // secretPatterns is a defense-in-depth net. By construction, deterministic

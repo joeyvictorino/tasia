@@ -8,10 +8,10 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/dzh01/tasia/internal/collect"
-	"github.com/dzh01/tasia/internal/llm"
-	"github.com/dzh01/tasia/internal/report"
-	"github.com/dzh01/tasia/internal/rules"
+	"github.com/joeyvictorino/tasia/internal/collect"
+	"github.com/joeyvictorino/tasia/internal/llm"
+	"github.com/joeyvictorino/tasia/internal/report"
+	"github.com/joeyvictorino/tasia/internal/rules"
 )
 
 // Build metadata, overridden at release time via -ldflags.

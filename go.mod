@@ -1,4 +1,4 @@
-module github.com/dzh01/tasia
+module github.com/joeyvictorino/tasia
 
 go 1.26.4
 

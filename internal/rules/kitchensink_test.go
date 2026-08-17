@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dzh01/tasia/internal/collect"
+	"github.com/joeyvictorino/tasia/internal/collect"
 )
 
 // TestKitchenSinkFixture walks the top-level testdata/kitchensink stack and

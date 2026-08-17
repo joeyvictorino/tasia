@@ -14,25 +14,25 @@ Private AI is not automatically private.
 ```bash
 # macOS (Apple Silicon) example — pick the asset matching your OS/arch
 VERSION=v0.1.1
-curl -sSfL "https://github.com/dzh01/tasia/releases/download/${VERSION}/tasia_${VERSION#v}_darwin_arm64.tar.gz" | tar xz
+curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/tasia_${VERSION#v}_darwin_arm64.tar.gz" | tar xz
 sudo mv tasia /usr/local/bin/
 tasia version
 ```
 
 Prebuilt binaries are published for `darwin_arm64`, `darwin_amd64`, `linux_amd64`,
 and `linux_arm64` on every release, with a `checksums.txt` to verify downloads.
-Browse them at **https://github.com/dzh01/tasia/releases**.
+Browse them at **https://github.com/joeyvictorino/tasia/releases**.
 
 **With Go:**
 
 ```bash
-go install github.com/dzh01/tasia/cmd/tasia@latest
+go install github.com/joeyvictorino/tasia/cmd/tasia@latest
 ```
 
 **From source:**
 
 ```bash
-git clone https://github.com/dzh01/tasia
+git clone https://github.com/joeyvictorino/tasia
 cd tasia
 go build -o tasia ./cmd/tasia
 ```
@@ -48,7 +48,7 @@ To try the bundled example (if you installed the binary or via `go install`,
 clone the repo first so the `examples/` directory is present):
 
 ```bash
-git clone https://github.com/dzh01/tasia && cd tasia
+git clone https://github.com/joeyvictorino/tasia && cd tasia
 tasia review --path examples/messy-ollama-stack
 ```
 

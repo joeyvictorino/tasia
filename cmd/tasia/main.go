@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dzh01/tasia/internal/cli"
+	"github.com/joeyvictorino/tasia/internal/cli"
 )
 
 func main() {

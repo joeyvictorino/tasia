@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dzh01/tasia/internal/collect"
-	"github.com/dzh01/tasia/internal/rules"
+	"github.com/joeyvictorino/tasia/internal/collect"
+	"github.com/joeyvictorino/tasia/internal/rules"
 )
 
 // Decide computes the overall decision and risk from the findings. A finding at
