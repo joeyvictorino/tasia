@@ -1,101 +1,30 @@
 # Tasia
-Harden private AI stacks before they ship.
 
-Tasia reviews local/private AI deployment configs, flags risky exposure patterns, blocks unsafe pushes, and generates a hardening pack your team can act on.
+[![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
+[![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Private AI is not automatically private.
+Tasia is a small Go command-line gate for self-hosted AI stacks. It reads Docker Compose files and `.env*` files, applies 12 deterministic rules (inference APIs, chat UIs, vector databases and data stores published to every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags and similar), and reports each finding with `file:line`, why it matters and a fix. It can block a push or a CI job on a severity threshold, and it writes a hardening pack to `.tasia/` without touching your sources. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the network exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
-## Install
+## Quickstart
 
-**No Go toolchain required — download a prebuilt binary:**
-
-```bash
-# macOS (Apple Silicon) example — pick the asset matching your OS/arch
-VERSION=v0.1.1
-curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/tasia_${VERSION#v}_darwin_arm64.tar.gz" | tar xz
-sudo mv tasia /usr/local/bin/
-tasia version
-```
-
-Prebuilt binaries are published for `darwin_arm64`, `darwin_amd64`, `linux_amd64`,
-and `linux_arm64` on every release, with a `checksums.txt` to verify downloads.
-Browse them at **https://github.com/joeyvictorino/tasia/releases**.
-
-**With Go:**
-
-```bash
-go install github.com/joeyvictorino/tasia/cmd/tasia@latest
-```
-
-**From source:**
+Requires Go 1.26+ (see `go.mod`). Every command below was run from a clean clone.
 
 ```bash
 git clone https://github.com/joeyvictorino/tasia
 cd tasia
 go build -o tasia ./cmd/tasia
+
+# Review the bundled deliberately-messy stack (prints findings, writes nothing)
+./tasia review --path examples/messy-ollama-stack --no-write
+
+# Use it as a gate: exit 1 = blocked, 0 = pass, 2 = tool or config error
+./tasia ci --path examples/messy-ollama-stack;    echo "exit: $?"   # 1
+./tasia ci --path examples/hardened-ollama-stack; echo "exit: $?"   # 0
 ```
 
-## Quickstart
-
-```bash
-# Point it at any directory containing compose / .env / Dockerfiles
-tasia review --path .
-```
-
-To try the bundled example (if you installed the binary or via `go install`,
-clone the repo first so the `examples/` directory is present):
-
-```bash
-git clone https://github.com/joeyvictorino/tasia && cd tasia
-tasia review --path examples/messy-ollama-stack
-```
-
-Tasia will:
-- Walk compose files, .env*, Dockerfiles
-- Extract services, published ports, images, mounts, env key names
-- Apply deterministic rules
-- Print Decision + Risk + findings with file:line
-- Write `.tasia/` pack (never mutates your sources)
-
-## What Tasia catches
-
-| Finding | Severity |
-|---------|----------|
-| Inference API (Ollama / vLLM / llama.cpp / LM Studio) published to all interfaces (incl. `network_mode: host`) | HIGH |
-| Open WebUI / Gradio UI published to all interfaces | HIGH |
-| Vector DB (Qdrant / Chroma / Weaviate / Milvus) published to host | HIGH |
-| Data store (Redis / Postgres) published to host | HIGH alongside AI, else MEDIUM |
-| Docker socket mounted | CRITICAL |
-| `privileged: true` | CRITICAL |
-| Permissive CORS e.g. `OLLAMA_ORIGINS=*` | HIGH |
-| `.env` / compose contains token/secret key names (values never printed) | MEDIUM |
-| `image: ...:latest` | MEDIUM |
-| Broad bind mounts (e.g. `.:/app`) | MEDIUM |
-| No internal Docker network separation | MEDIUM |
-| No AI stack manifest | LOW |
-
-See [`docs/rules.md`](docs/rules.md) for the exact match rules and ports.
-
-## What Tasia generates
-
-After `tasia review --path .` you get `.tasia/`:
-
-- `HARDENING_PLAN.md` — decision, risk, every finding with location + why + exact fix + suggested change
-- `EXECUTIVE_MEMO.md` — business-oriented summary for leadership
-- `ai-stack-manifest.json` — inventory of runtimes / interfaces / retrieval / ports / secrets keys found
-- `docker-compose.hardened.override.yml` — safe compose overrides (bind localhost + internal net)
-- `firewall-notes.md`
-- `findings.json`
-- `findings.toon` — compact agent-readable format
-- `LLM_REVIEW.md` — **only** created by `tasia explain` (not by `review`); optional local-LLM human summary (see below)
-
-## Example: messy Ollama stack
-
-See `examples/messy-ollama-stack/docker-compose.yml`.
-
-Running review yields:
+Expected output of the first command:
 
 ```
 TASIA
@@ -104,110 +33,113 @@ Risk: HIGH
 [HIGH] docker-compose.yml:5 Inference API published to all interfaces
 [HIGH] docker-compose.yml:9 Open WebUI/Gradio UI published to all interfaces
 [HIGH] docker-compose.yml:13 Vector DB published to host
+[MEDIUM] docker-compose.yml:3 image uses latest
 ...
-Wrote .tasia/ hardening pack
 ```
 
-## Git pre-push mode
+Without `--no-write`, `review` also writes the hardening pack to `.tasia/` inside the scanned directory.
+
+### Other ways to install
+
+Prebuilt binaries (darwin and linux, amd64 and arm64) are attached to each [release](https://github.com/joeyvictorino/tasia/releases) with a `checksums.txt`:
 
 ```bash
-tasia install --pre-push
+VERSION=v0.1.1
+curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/tasia_${VERSION#v}_darwin_arm64.tar.gz" | tar xz
+./tasia version
 ```
 
-Creates `.git/hooks/pre-push` that runs:
+`go install github.com/joeyvictorino/tasia/cmd/tasia@main` works. `@latest` currently fails: the `v0.1.0` and `v0.1.1` tags predate the module-path rename and still declare `github.com/dzh01/tasia`, so Go refuses them. Fixing `@latest` needs a new release tag.
+
+## What it checks
+
+| Rule | Severity |
+|------|----------|
+| Inference API (Ollama, vLLM, llama.cpp, LM Studio) published to all interfaces, including `network_mode: host` | HIGH |
+| Open WebUI or Gradio published to all interfaces | HIGH |
+| Vector DB (Qdrant, Chroma, Weaviate, Milvus) published to the host | HIGH |
+| Data store (Redis, Valkey, Postgres, pgvector) published to all interfaces | HIGH alongside AI components, else MEDIUM |
+| Docker socket mounted | CRITICAL |
+| `privileged: true` | CRITICAL |
+| Permissive CORS such as `OLLAMA_ORIGINS=*` | HIGH |
+| Token or secret key names in `.env*` or compose `environment:` (names only, values are never read into findings) | MEDIUM |
+| `image:` with `:latest` or no tag | MEDIUM |
+| Broad, writable bind mounts such as `.:/app` | MEDIUM |
+| Multi-service stack publishing ports with no `internal: true` network | MEDIUM |
+| No `ai-stack-manifest.json` | LOW |
+
+Exact match rules, ports and image substrings are in [`docs/rules.md`](docs/rules.md). A port bound to `127.0.0.1`, `localhost` or `::1` is treated as safe.
+
+## What it does not do
+
+- It does not scan networks or running containers; it only reads files.
+- It does not analyze Dockerfiles yet. They are collected, but no rule uses them. Dockerfile `USER` and `EXPOSE` checks, Kubernetes manifests, Caddy and nginx checks, and SARIF output are on the [roadmap](docs/roadmap.md), not implemented.
+- It does not edit your files, read secret values into findings, call the internet or collect telemetry. The only optional network call is `tasia explain` to a local Ollama you run.
+- It does not prove security or compliance. A PASS means no rule matched.
+- The generated `docker-compose.hardened.override.yml` is a suggestion, not a drop-in file. Compose appends `ports` lists when merging files, so apply the changes to your base file (or use the `!override` tag) and check with `docker compose config`. The file says this in its header.
+
+## Commands
 
 ```
-tasia ci --path . --fail-on high
+tasia review --path .  [--format text|json] [--fail-on critical|high|medium|low] [--no-write] [--strict]
+tasia ci     --path .  [--fail-on critical|high|medium|low]     # default: high
+tasia install --pre-push          # git hook that runs: tasia ci --path . --fail-on high
+tasia uninstall --pre-push
+tasia explain [--path .] [--ollama MODEL] [--ollama-host HOST[:PORT]]
+tasia version
 ```
 
-A push containing exposed services will be blocked with exit 1.
+- `review` reports and exits 0 when it completes, whatever the decision; use `ci` (or the pre-push hook) to gate. `--format json` prints pure JSON on stdout.
+- `ci` exits 0 (pass), 1 (blocked at or above `--fail-on`) or 2 (tool or config error).
+- Fails closed: a compose or env file that cannot be parsed gives `Decision: ERROR` and exit 2, never PASS. An unknown `--fail-on` value is also exit 2.
+- `explain` sends only the redacted findings to a local Ollama (default `localhost:11434`) and writes `.tasia/LLM_REVIEW.md`. Without `--ollama` it only writes the redacted facts and sends nothing. `review` and `ci` never call a model.
 
-Remove with `tasia uninstall --pre-push`.
+## What `.tasia/` contains
 
-## CI mode
+`HARDENING_PLAN.md`, `EXECUTIVE_MEMO.md`, `ai-stack-manifest.json`, `docker-compose.hardened.override.yml`, `firewall-notes.md`, `findings.json`, `findings.toon` (compact agent-readable format), and `LLM_REVIEW.md` only after `tasia explain`. See [`docs/generated-artifacts.md`](docs/generated-artifacts.md).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  F["compose, .env*, Dockerfile files"] --> C["collect: walk tree, parse YAML nodes, record env key names"]
+  C -- "unparseable file" --> X["Decision ERROR, exit 2"]
+  C --> R["rules: 12 deterministic checks"]
+  R --> D["report: Decide PASS or BLOCKED"]
+  D --> T["terminal summary or JSON"]
+  D --> P[".tasia/ hardening pack"]
+  D --> G["ci and pre-push: exit 0 or 1"]
+  R -. "explain only" .-> RD["redact"] -.-> O["local Ollama"]
+```
+
+| Package | Role |
+|---------|------|
+| `cmd/tasia` | entry point |
+| `internal/cli` | command dispatch, flags, exit codes, git hook install |
+| `internal/collect`, `internal/collect/compose` | tree walk, compose parsing with line numbers (yaml.v3 nodes), env key-name extraction |
+| `internal/rules` | the deterministic rules and the `Finding` model |
+| `internal/report` | decision, terminal and JSON output, `.tasia/` artifacts |
+| `internal/llm` | redaction and the optional Ollama client |
+
+## Tests
 
 ```bash
-tasia ci --path . --fail-on high
+go test ./... -race -count=1
+gofmt -l . && go vet ./...
 ```
 
-Exit codes:
-- `0` = pass
-- `1` = blocked findings
-- `2` = tool/config error
+CI ([`.github/workflows/test.yml`](.github/workflows/test.yml)) runs the same, plus the documented exit codes against the bundled examples and a `go mod tidy` check. Test fixtures are in `testdata/` and `examples/`.
 
-Tasia **fails closed**: a config file it cannot parse yields `Decision: ERROR` and
-exit `2`, never a misleading `PASS`. A gate that can't read your stack won't vouch
-for it.
+## Docs
 
-## Optional local LLM mode
+[`docs/rules.md`](docs/rules.md), [`docs/threat-model.md`](docs/threat-model.md), [`docs/roadmap.md`](docs/roadmap.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md).
 
-```bash
-tasia explain --ollama llama3.1
-# custom host/port:
-tasia explain --ollama llama3.1 --ollama-host 127.0.0.1:11434
-```
+## License
 
-`explain` POSTs **only the findings** to your local Ollama at
-`http://localhost:11434/api/generate` and writes the prose to
-`.tasia/LLM_REVIEW.md`. Findings never contain secret **values** by construction
-(evidence is always a key name, port, image, or the flagged config token itself),
-and a defense-in-depth redactor additionally scrubs common token formats
-(OpenAI/HF/GitHub/AWS/Google/Slack keys, JWTs, `user:pass@` URLs) before sending.
-`LLM_REVIEW.md` is written **only** by `explain` — a plain `review` never implies
-an LLM was consulted.
+Apache-2.0, see [`LICENSE`](LICENSE).
 
-The deterministic rules are always authoritative. The LLM is never required:
-`review` and `ci` never call it and never fail because of it. If Ollama is
-unreachable, `explain` prints a clear message and exits `2`. Without `--ollama`,
-`explain` just writes the redacted facts and the command to generate prose.
+## Name and author
 
-## Options for review
+The name is a nod to my daughter Anastasia and to the AI stacks this tool protects.
 
-```
-tasia review --path . --format text|json   # text (default) or pure-JSON stdout
-tasia review --path . --fail-on high        # critical|high|medium threshold
-tasia review --path . --no-write            # print only; write nothing
-tasia review --path . --strict              # treat medium+ as blocking
-```
-
-Other commands:
-
-```
-tasia version                 # print version / commit / build date
-tasia uninstall --pre-push    # remove the git hook
-tasia help                    # full usage
-```
-
-## What Tasia does not do
-
-- Does not scan the public internet
-- Does not read or print secret values
-- Does not auto-edit your files
-- Does not require cloud accounts or telemetry
-- Does not claim to prove security or compliance
-
-## Threat model
-
-See `docs/threat-model.md`.
-
-## Roadmap
-
-See `docs/roadmap.md`.
-
-v0.1 — Compose hardening (current)
-
-v0.2 — GitHub Action + SARIF, more detections
-
-## Contributing
-
-See `CONTRIBUTING.md`.
-
-## Name
-
-The name is a nod to my daughter Anastasia — and to the AI stacks this tool protects.
-
-The utility stands on its own.
-
-## Author
-
-I'm [Joey Victorino](https://joeyvictorino.com). I advise executives, investors, and counsel on consequential technology decisions. Tasia automates part of my published [Local AI Deployment Hardening Checklist](https://joeyvictorino.com/checklist.html).
+Built by [Joey Victorino](https://joeyvictorino.com). Tasia automates part of the published [Local AI Deployment Hardening Checklist](https://joeyvictorino.com/checklist.html).
