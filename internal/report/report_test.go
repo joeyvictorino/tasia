@@ -68,6 +68,10 @@ func TestHardenedOverride(t *testing.T) {
 			t.Errorf("vector DB qdrant should force ports: [] not publish; got:\n%s", override)
 		}
 	}
+	// The file must not pose as a drop-in: Compose appends ports lists on merge.
+	if !strings.Contains(override, "APPENDS") || !strings.Contains(override, "!override") {
+		t.Errorf("override should warn that Compose appends ports lists; got:\n%s", override)
+	}
 }
 
 // Golden-style tests that drive the actual shipped report generators and WriteArtifacts.
