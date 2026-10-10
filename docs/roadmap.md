@@ -3,7 +3,7 @@
 ## v0.1 — Compose hardening (current)
 
 - `review`, `ci`, `install`/`uninstall --pre-push`, `explain`, `version`
-- 12 deterministic rules with real line numbers via yaml.v3 nodes
+- 12 deterministic rules with real line numbers via yaml.v3 nodes (including `network_mode: host`)
 - Detection: Ollama, vLLM, llama.cpp, LM Studio, Open WebUI, Gradio,
   Qdrant, Chroma, Weaviate, Milvus, Redis, Postgres
 - Full `.tasia/` hardening pack (never edits your files)
@@ -13,7 +13,6 @@
 ## v0.2
 
 - GitHub Action + SARIF output
-- `network_mode: host` rule
 - Caddyfile / nginx auth checks
 - Chroma / Weaviate auth hints
 - Dockerfile `USER root` / `EXPOSE` analysis

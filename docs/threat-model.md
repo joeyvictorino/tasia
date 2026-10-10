@@ -4,7 +4,8 @@ Tasia is a local static analyzer for deployment artifacts.
 
 ## In scope
 
-- Misconfigurations in compose, Dockerfiles, env files that cause private AI services to be reachable beyond localhost or the intended container network.
+- Misconfigurations in compose files and `.env*` files that cause private AI services to be reachable beyond localhost or the intended container network.
+- Dockerfiles are collected, but no rule analyzes them yet (planned, see the roadmap).
 - Accidental secret key name leakage (names only).
 - Mutable image tags.
 
