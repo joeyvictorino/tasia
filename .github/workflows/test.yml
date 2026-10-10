@@ -5,6 +5,13 @@ on:
     branches: [ main ]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -12,8 +19,35 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
       - run: go mod download
-      - run: go test ./... -count=1
-      - run: go build ./cmd/tasia
-      - run: ./tasia review --path examples/messy-ollama-stack --no-write
+      - run: go build -o tasia ./cmd/tasia
+      - run: go test ./... -count=1 -race
+      - name: Gate behaviour on the bundled examples
+        run: |
+          set +e
+          ./tasia review --path examples/messy-ollama-stack --no-write
+          test $? -eq 0 || { echo "review should exit 0"; exit 1; }
+          ./tasia ci --path examples/messy-ollama-stack >/dev/null 2>&1
+          test $? -eq 1 || { echo "ci on the messy stack should exit 1 (BLOCKED)"; exit 1; }
+          ./tasia ci --path examples/hardened-ollama-stack
+          test $? -eq 0 || { echo "ci on the hardened stack should exit 0 (PASS)"; exit 1; }
+          ./tasia ci --path examples/hardened-ollama-stack --fail-on bogus >/dev/null 2>&1
+          test $? -eq 2 || { echo "invalid --fail-on should exit 2"; exit 1; }
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then echo "gofmt needed on:"; echo "$out"; exit 1; fi
+      - run: go vet ./...
+      - name: go.mod and go.sum are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
