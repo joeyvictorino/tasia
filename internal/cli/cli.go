@@ -65,12 +65,24 @@ func Run(args []string) error {
 	}
 }
 
+// validateFailOn rejects unknown severity thresholds. An unknown value ranks
+// below every real severity, so a typo such as "hgih" would otherwise silently
+// turn the gate into "block on any finding". An empty value means "use the
+// command default".
+func validateFailOn(v string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "critical", "high", "medium", "low":
+		return nil
+	}
+	return fmt.Errorf("invalid --fail-on %q (want critical, high, medium or low)", v)
+}
+
 func printUsage() {
 	fmt.Println(`Tasia — private AI stack hardening gate
 
 Usage:
-  tasia review [--path .] [--format text|json] [--fail-on high|medium|critical] [--no-write] [--strict]
-  tasia ci [--path .] [--fail-on high]
+  tasia review [--path .] [--format text|json] [--fail-on critical|high|medium|low] [--no-write] [--strict]
+  tasia ci [--path .] [--fail-on critical|high|medium|low]
   tasia install --pre-push
   tasia uninstall --pre-push
   tasia explain [--path .] [--ollama llama3.1] [--ollama-host localhost:11434]
@@ -84,10 +96,13 @@ func runReview(args []string) error {
 	fs := flag.NewFlagSet("review", flag.ContinueOnError)
 	path := fs.String("path", ".", "path to scan")
 	format := fs.String("format", "text", "output format: text or json")
-	failOn := fs.String("fail-on", "", "fail level: critical, high, medium")
+	failOn := fs.String("fail-on", "", "fail level: critical, high, medium, low")
 	noWrite := fs.Bool("no-write", false, "do not write .tasia/ artifacts")
 	strict := fs.Bool("strict", false, "treat warnings as blocking too")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := validateFailOn(*failOn); err != nil {
 		return err
 	}
 
@@ -156,6 +171,9 @@ func runCI(args []string) error {
 	path := fs.String("path", ".", "path to scan")
 	failOn := fs.String("fail-on", "high", "fail level: critical, high, medium, low")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := validateFailOn(*failOn); err != nil {
 		return err
 	}
 
