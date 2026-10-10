@@ -6,10 +6,12 @@ Only the latest release is supported.
 
 ## Reporting a Vulnerability
 
-If you believe you have found a vulnerability in Tasia itself (not the stacks it
-scans), please open a private security advisory on GitHub or email the maintainer.
+If you believe you have found a vulnerability in Tasia itself (not in the stacks it
+scans), report it privately through GitHub:
+<https://github.com/joeyvictorino/tasia/security/advisories/new>
 
-Do not file public issues for suspected security problems in the tool.
+Please do not file public issues for suspected security problems in the tool. This is a
+personal open-source project; there is no formal response-time commitment.
 
 ## What Tasia does and does not claim
 
