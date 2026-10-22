@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a small Go command-line gate for self-hosted AI stacks. It reads Docker Compose files and `.env*` files, applies 12 deterministic rules (inference APIs, chat UIs, vector databases and data stores published to every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags and similar), and reports each finding with `file:line`, why it matters and a fix. It can block a push or a CI job on a severity threshold, and it writes a hardening pack to `.tasia/` without touching your sources. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the network exposure is checked.
+Tasia is a small Go command-line gate for self-hosted AI stacks. It reads Docker Compose files and `.env*` files, applies 12 deterministic rules (inference APIs, chat UIs, vector databases and data stores published to every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags and similar), and reports each finding with `file:line`, why it matters and a fix. It can block a push or a CI job on a severity threshold, emit JSON or SARIF 2.1.0 for automation, and write a hardening pack to `.tasia/` without touching your sources. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the network exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -81,7 +81,7 @@ Exact match rules, ports and image substrings are in [`docs/rules.md`](docs/rule
 ## Commands
 
 ```
-tasia review --path .  [--format text|json] [--fail-on critical|high|medium|low] [--no-write] [--strict]
+tasia review --path .  [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict]
 tasia ci     --path .  [--fail-on critical|high|medium|low]     # default: high
 tasia install --pre-push          # git hook that runs: tasia ci --path . --fail-on high
 tasia uninstall --pre-push
@@ -90,6 +90,7 @@ tasia version
 ```
 
 - `review` reports and exits 0 when it completes, whatever the decision; use `ci` (or the pre-push hook) to gate. `--format json` prints pure JSON on stdout.
+- `--format sarif` prints SARIF 2.1.0 on stdout for code-scanning upload. HIGH and CRITICAL findings are `error`, MEDIUM is `warning`, and LOW is `note`. Parse failures remain fail-closed through an unsuccessful SARIF invocation.
 - `ci` exits 0 (pass), 1 (blocked at or above `--fail-on`) or 2 (tool or config error).
 - Fails closed: a compose or env file that cannot be parsed gives `Decision: ERROR` and exit 2, never PASS. An unknown `--fail-on` value is also exit 2.
 - `explain` sends only the redacted findings to a local Ollama (default `localhost:11434`) and writes `.tasia/LLM_REVIEW.md`. Without `--ollama` it only writes the redacted facts and sends nothing. `review` and `ci` never call a model.

@@ -50,5 +50,5 @@ and the long form (`type: bind` / `source:` / `target:`).
 
 ## Not yet implemented (roadmap)
 
-SARIF output, Caddyfile / nginx auth checks, Dockerfile `USER root` / `EXPOSE`
-analysis, Kubernetes manifests. See `docs/roadmap.md`.
+Caddyfile / nginx auth checks, Dockerfile `USER root` / `EXPOSE` analysis,
+Kubernetes manifests. See `docs/roadmap.md`.

@@ -41,3 +41,22 @@ func TestCIRejectsInvalidFailOn(t *testing.T) {
 		t.Error("expected error for invalid --fail-on on review")
 	}
 }
+
+func TestValidateFormat(t *testing.T) {
+	for _, ok := range []string{"text", "json", "sarif", "SARIF", " json "} {
+		if err := validateFormat(ok); err != nil {
+			t.Errorf("validateFormat(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "xml", "github", "sarif-2.1.0"} {
+		if err := validateFormat(bad); err == nil {
+			t.Errorf("validateFormat(%q) = nil, want error", bad)
+		}
+	}
+}
+
+func TestReviewRejectsInvalidFormat(t *testing.T) {
+	if err := Run([]string{"review", "--path", t.TempDir(), "--format", "xml", "--no-write"}); err == nil {
+		t.Error("expected error for invalid --format")
+	}
+}

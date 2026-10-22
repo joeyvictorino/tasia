@@ -12,7 +12,8 @@
 
 ## v0.2
 
-- GitHub Action + SARIF output
+- GitHub Action
+- SARIF 2.1.0 output
 - Caddyfile / nginx auth checks
 - Chroma / Weaviate auth hints
 - Dockerfile `USER root` / `EXPOSE` analysis

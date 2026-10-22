@@ -34,6 +34,8 @@ jobs:
           test $? -eq 0 || { echo "ci on the hardened stack should exit 0 (PASS)"; exit 1; }
           ./tasia ci --path examples/hardened-ollama-stack --fail-on bogus >/dev/null 2>&1
           test $? -eq 2 || { echo "invalid --fail-on should exit 2"; exit 1; }
+          ./tasia review --path examples/messy-ollama-stack --format sarif --no-write > tasia.sarif
+          python3 -c 'import json; d=json.load(open("tasia.sarif")); assert d["version"] == "2.1.0"; assert d["runs"][0]["results"]'
 
   lint:
     runs-on: ubuntu-latest
