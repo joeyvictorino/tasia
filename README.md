@@ -44,12 +44,12 @@ Without `--no-write`, `review` also writes the hardening pack to `.tasia/` insid
 Prebuilt binaries (darwin and linux, amd64 and arm64) are attached to each [release](https://github.com/joeyvictorino/tasia/releases) with a `checksums.txt`:
 
 ```bash
-VERSION=v0.1.1
+VERSION=v0.1.2
 curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/tasia_${VERSION#v}_darwin_arm64.tar.gz" | tar xz
 ./tasia version
 ```
 
-`go install github.com/joeyvictorino/tasia/cmd/tasia@main` works. `@latest` will work from the next release tag; the `v0.1.0` and `v0.1.1` tags predate the module-path rename and are not installable by module path.
+`go install github.com/joeyvictorino/tasia/cmd/tasia@latest` installs the latest release. Use `@v0.1.2` to pin this version. The `v0.1.0` and `v0.1.1` tags predate the module-path rename and are not installable by module path.
 
 ## What it checks
 
