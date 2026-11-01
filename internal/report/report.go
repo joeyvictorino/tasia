@@ -255,6 +255,7 @@ func buildManifest(c *collect.Collected, findings []rules.Finding, decision, ris
 		"runtimes":               c.DetectedRuntimes,
 		"interfaces":             c.DetectedInterfaces,
 		"retrieval_databases":    c.DetectedRetrieval,
+		"agent_runtimes":         c.DetectedAgentRuntimes,
 		"published_ports":        ports,
 		"secret_key_names_found": secrets,
 		"risk":                   risk,

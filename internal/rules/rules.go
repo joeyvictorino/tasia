@@ -93,8 +93,9 @@ func evaluateService(relCompose string, svc compose.Service, stackHasAI bool) []
 	out = append(out, exposedPortFindings(svc, relCompose, stackHasAI)...)
 	appendIf(privilegedFinding(svc, relCompose))
 	appendIf(latestImageFinding(svc, relCompose))
-	out = append(out, dockerSocketFindings(svc, relCompose)...)
-	out = append(out, broadBindMountFindings(svc, relCompose)...)
+	isAgent := classifyService(svc.Image, 0) == catAgent
+	out = append(out, dockerSocketFindings(svc, relCompose, isAgent)...)
+	out = append(out, broadBindMountFindings(svc, relCompose, isAgent)...)
 	out = append(out, environmentFindings(svc, relCompose)...)
 
 	return out
@@ -125,7 +126,16 @@ var exposureTemplates = map[svcCategory]exposureTemplate{
 		why:   "Vector database contains embeddings that may encode sensitive retrieved data.",
 		fix:   "Do not publish vector DB ports to host. Access only via internal Docker network from trusted services.",
 	},
+	catAgent: {
+		id:    "exposed_agent_runtime",
+		title: "Agent runtime published to all interfaces",
+		why:   agentExposureWhy,
+		fix:   "Bind to 127.0.0.1 or put the runtime behind an authenticating proxy, and keep it on an internal Docker network. Grant it only the credentials and tools its workflows need.",
+	},
 }
+
+// agentExposureWhy is shared by the port and host-network forms of the rule.
+const agentExposureWhy = "An agent runtime executes tools and model-written code with whatever credentials it holds. Publishing it beyond localhost hands remote parties a code-execution surface, not just a chat window."
 
 // exposedPortFindings flags every host-published port that belongs to a
 // recognized AI or data-store service.
@@ -211,7 +221,11 @@ func latestImageFinding(svc compose.Service, relCompose string) (Finding, bool) 
 	}, true
 }
 
-func dockerSocketFindings(svc compose.Service, relCompose string) []Finding {
+func dockerSocketFindings(svc compose.Service, relCompose string, isAgent bool) []Finding {
+	why := "Mounting the Docker socket gives the container full control of the Docker daemon on the host."
+	if isAgent {
+		why += " In an agent runtime that control is reachable by model-written code."
+	}
 	var out []Finding
 	for _, v := range svc.Volumes {
 		if strings.Contains(v, "/var/run/docker.sock") {
@@ -222,7 +236,7 @@ func dockerSocketFindings(svc compose.Service, relCompose string) []Finding {
 				File:     relCompose,
 				Line:     svc.VolumesLine,
 				Evidence: v,
-				Why:      "Mounting the Docker socket gives the container full control of the Docker daemon on the host.",
+				Why:      why,
 				Fix:      "Remove docker.sock mount. Use rootless Docker or dedicated build service instead.",
 			})
 		}
@@ -230,22 +244,34 @@ func dockerSocketFindings(svc compose.Service, relCompose string) []Finding {
 	return out
 }
 
-func broadBindMountFindings(svc compose.Service, relCompose string) []Finding {
+// broadBindMountFindings flags writable, broad host bind mounts. On an agent
+// runtime the finding is HIGH: a writable mount of the project lets the agent
+// change the tests, scripts or expected outputs that judge its own work, so a
+// later "all checks pass" proves nothing.
+func broadBindMountFindings(svc compose.Service, relCompose string, isAgent bool) []Finding {
 	var out []Finding
 	for _, v := range svc.Volumes {
 		broad := strings.HasPrefix(v, ".:") || strings.HasPrefix(v, "./:") || strings.Contains(v, ":/app")
-		if broad && !isReadOnlyMount(v) {
-			out = append(out, Finding{
-				ID:       "broad_bind_mount",
-				Severity: SeverityMedium,
-				Title:    "broad bind mount",
-				File:     relCompose,
-				Line:     svc.VolumesLine,
-				Evidence: v,
-				Why:      "Broad host-to-container bind mounts can expose source, secrets, or allow escape.",
-				Fix:      "Use more specific mounts or named volumes; prefer read-only where possible.",
-			})
+		if !broad || isReadOnlyMount(v) {
+			continue
 		}
+		f := Finding{
+			ID:       "broad_bind_mount",
+			Severity: SeverityMedium,
+			Title:    "broad bind mount",
+			File:     relCompose,
+			Line:     svc.VolumesLine,
+			Evidence: v,
+			Why:      "Broad host-to-container bind mounts can expose source, secrets, or allow escape.",
+			Fix:      "Use more specific mounts or named volumes; prefer read-only where possible.",
+		}
+		if isAgent {
+			f.Severity = SeverityHigh
+			f.Title = "agent runtime has a broad writable bind mount"
+			f.Why = "A writable mount of the project lets the agent runtime edit the tests, check scripts and expected outputs that judge its own work, so a passing check no longer proves anything. It also exposes source and secrets to model-written code."
+			f.Fix = "Mount inputs read-only (:ro) and give the agent a separate, narrow writable workspace. Keep test data and check scripts outside anything the agent can write."
+		}
+		out = append(out, f)
 	}
 	return out
 }
@@ -367,6 +393,7 @@ const (
 	catUI
 	catVector
 	catDatastore
+	catAgent // agent runtimes and workflow engines that execute tools or code
 )
 
 // imageKeywords maps a category to the image-name substrings that identify it.
@@ -378,7 +405,8 @@ var imageKeywords = map[svcCategory][]string{
 }
 
 // portCategory maps a well-known host port to its service category, so bare or
-// unknown images are still classified (e.g. LM Studio on 1234, Milvus on 19530).
+// unknown images are still classified (e.g. LM Studio on 1234, Milvus on 19530,
+// n8n on 5678).
 var portCategory = map[int]svcCategory{
 	11434: catInference,
 	1234:  catInference,
@@ -387,14 +415,24 @@ var portCategory = map[int]svcCategory{
 	19530: catVector,
 	6379:  catDatastore,
 	5432:  catDatastore,
+	5678:  catAgent,
 }
 
 // classifyService categorizes a service by image name first, then falls back to
 // the published host port. Image name is checked in a fixed category order so
-// classification is deterministic.
+// classification is deterministic. Agent runtimes are matched before UIs so a
+// runtime that also serves a UI (Langflow, Flowise) is judged by the larger
+// blast radius; the agent-runtime image rules live in internal/collect so the
+// stack manifest and the rules cannot drift apart.
 func classifyService(image string, hostPort int) svcCategory {
 	img := strings.ToLower(image)
-	for _, category := range []svcCategory{catInference, catUI, catVector, catDatastore} {
+	if containsAny(img, imageKeywords[catInference]) {
+		return catInference
+	}
+	if _, ok := collect.IsAgentRuntimeImage(img); ok {
+		return catAgent
+	}
+	for _, category := range []svcCategory{catUI, catVector, catDatastore} {
 		if containsAny(img, imageKeywords[category]) {
 			return category
 		}
@@ -437,6 +475,10 @@ func hostNetworkFinding(svc compose.Service, relCompose string, stackHasAI bool)
 		base.ID, base.Severity = "exposed_vector", SeverityHigh
 		base.Title = "Vector DB on host network (all interfaces)"
 		base.Why = "network_mode: host exposes the vector database on every host interface."
+	case catAgent:
+		base.ID, base.Severity = "exposed_agent_runtime", SeverityHigh
+		base.Title = "Agent runtime on host network (all interfaces)"
+		base.Why = "network_mode: host puts the agent runtime on every host interface. " + agentExposureWhy
 	case catDatastore:
 		base.ID = "exposed_datastore"
 		base.Title = "Data store on host network (all interfaces)"
@@ -453,10 +495,12 @@ func hostNetworkFinding(svc compose.Service, relCompose string, stackHasAI bool)
 }
 
 // composeHasAIComponent reports whether a compose file contains an inference,
-// UI, or vector service — used to raise data-store exposure to HIGH.
+// UI, vector or agent-runtime service — used to raise data-store exposure to
+// HIGH, since such a store likely holds prompts, chats, embeddings or workflow
+// credentials.
 func composeHasAIComponent(cf compose.File) bool {
 	isAI := func(c svcCategory) bool {
-		return c == catInference || c == catUI || c == catVector
+		return c == catInference || c == catUI || c == catVector || c == catAgent
 	}
 	for _, svc := range cf.Services {
 		if isAI(classifyService(svc.Image, 0)) {
