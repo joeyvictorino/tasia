@@ -34,6 +34,8 @@ jobs:
           test $? -eq 0 || { echo "ci on the hardened stack should exit 0 (PASS)"; exit 1; }
           ./tasia ci --path examples/hardened-ollama-stack --fail-on bogus >/dev/null 2>&1
           test $? -eq 2 || { echo "invalid --fail-on should exit 2"; exit 1; }
+          ./tasia ci --path examples/messy-agent-stack >/dev/null 2>&1
+          test $? -eq 1 || { echo "ci on the messy agent stack should exit 1 (BLOCKED)"; exit 1; }
 
   lint:
     runs-on: ubuntu-latest

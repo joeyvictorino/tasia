@@ -6,6 +6,11 @@
 - 12 deterministic rules with real line numbers via yaml.v3 nodes (including `network_mode: host`)
 - Detection: Ollama, vLLM, llama.cpp, LM Studio, Open WebUI, Gradio,
   Qdrant, Chroma, Weaviate, Milvus, Redis, Postgres
+- Agent runtimes as a category (n8n, Flowise, Langflow, Dify, OpenHands,
+  Open Interpreter, Memdoor, CrewAI, AutoGen): `exposed_agent_runtime`,
+  `broad_bind_mount` raised to HIGH on a runtime that can rewrite the
+  project that checks its own work, listed as `agent_runtimes` in the
+  stack manifest (13 rules)
 - Full `.tasia/` hardening pack (never edits your files)
 - Optional local `explain` via Ollama (redacted findings only)
 - Prebuilt binaries (darwin/linux, arm64/amd64) with checksums
@@ -13,6 +18,9 @@
 ## v0.2
 
 - GitHub Action + SARIF output
+- Agent-runtime follow-ups: flag auto-approve settings where a product
+  exposes them in compose `environment:` (key names only), and warn when
+  test or fixture directories are mounted writable into an agent service
 - Caddyfile / nginx auth checks
 - Chroma / Weaviate auth hints
 - Dockerfile `USER root` / `EXPOSE` analysis

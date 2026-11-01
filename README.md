@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose and `.env*` files, applies 12 deterministic rules (inference APIs, chat UIs, vector databases and data stores published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
+Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose and `.env*` files, applies 13 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -22,6 +22,7 @@ go build -o tasia ./cmd/tasia
 # Use it as a gate: exit 1 = blocked, 0 = pass, 2 = tool or config error
 ./tasia ci --path examples/messy-ollama-stack;    echo "exit: $?"   # 1
 ./tasia ci --path examples/hardened-ollama-stack; echo "exit: $?"   # 0
+./tasia ci --path examples/messy-agent-stack;      echo "exit: $?"   # 1: exposed n8n with a writable project mount
 ```
 
 Expected output of the first command:
@@ -59,16 +60,19 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 | Open WebUI or Gradio published to all interfaces | HIGH |
 | Vector DB (Qdrant, Chroma, Weaviate, Milvus) published to the host | HIGH |
 | Data store (Redis, Valkey, Postgres, pgvector) published to all interfaces | HIGH alongside AI components, else MEDIUM |
+| Agent runtime (n8n, Flowise, Langflow, Dify, OpenHands, Open Interpreter and similar) published to all interfaces, including `network_mode: host` | HIGH |
 | Docker socket mounted | CRITICAL |
 | `privileged: true` | CRITICAL |
 | Permissive CORS such as `OLLAMA_ORIGINS=*` | HIGH |
 | Token or secret key names in `.env*` or compose `environment:` (names only, values are never read into findings) | MEDIUM |
 | `image:` with `:latest` or no tag | MEDIUM |
-| Broad, writable bind mounts such as `.:/app` | MEDIUM |
+| Broad, writable bind mounts such as `.:/app` | MEDIUM, HIGH on an agent runtime |
 | Multi-service stack publishing ports with no `internal: true` network | MEDIUM |
 | No `ai-stack-manifest.json` | LOW |
 
 Exact match rules, ports and image substrings are in [`docs/rules.md`](docs/rules.md). A port bound to `127.0.0.1`, `localhost` or `::1` is treated as safe.
+
+Agent runtimes get their own rule because they are not chat windows: they execute tools and model-written code with whatever credentials they hold. A writable mount of the project on such a service is rated HIGH because the agent can then edit the tests or check scripts that judge its own output, and "all checks pass" stops meaning anything. `examples/messy-agent-stack` shows both.
 
 ## What it does not do
 

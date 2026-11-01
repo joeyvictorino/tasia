@@ -1,0 +1,17 @@
+# A deliberately messy self-hosted agent stack: the workflow engine that runs
+# model-written steps is published on every interface, it can rewrite the
+# project (including whatever checks its own output), and the model API is
+# open too. Used by the tests and the README; do not deploy.
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    volumes:
+      - .:/data
+    environment:
+      - N8N_ENCRYPTION_KEY=replace-me
+  ollama:
+    image: ollama/ollama:0.3.12
+    ports:
+      - "11434:11434"
