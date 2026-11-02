@@ -260,6 +260,10 @@ func Run(args []string) error {
 		return runEnvLeak(args[1:])
 	case "egress":
 		return runEgress(args[1:])
+	case "credential-scan":
+		return runCredentialScan(args[1:])
+	case "compose-override":
+		return runComposeOverride(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
