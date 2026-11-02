@@ -259,7 +259,7 @@ NetworkPolicy restricting pod-to-pod and egress traffic.
 Helm values.yaml insecure default. Insecure default in values.yaml (privileged,
 hostNetwork, runAsUser 0, LoadBalancer/NodePort, hostPath).
 
-## Terraform — AWS (6 rules)
+## Terraform — AWS (10 rules)
 
 ### <a id="tf_sg_ingress_all"></a>`tf_sg_ingress_all`
 
@@ -301,6 +301,34 @@ IAM policy grants unrestricted admin access. IAM policy with `Effect=Allow`
 **Severity:** HIGH — **Category:** terraform
 
 IAM policy grants all actions. IAM policy with `Effect=Allow` `actions=[*]`.
+
+### <a id="tf_lambda_admin_role"></a>`tf_lambda_admin_role`
+
+**Severity:** HIGH — **Category:** terraform
+
+Lambda function with admin execution role. AWS Lambda function whose execution
+role grants `AdministratorAccess` or `Action: *`.
+
+### <a id="tf_lambda_vpc_no_sg"></a>`tf_lambda_vpc_no_sg`
+
+**Severity:** MEDIUM — **Category:** terraform
+
+Lambda in VPC without security groups. AWS Lambda function with a `vpc_config`
+block that has empty `security_group_ids`.
+
+### <a id="tf_ecs_privileged"></a>`tf_ecs_privileged`
+
+**Severity:** HIGH — **Category:** terraform
+
+ECS task runs privileged container. ECS task definition with `privileged: true`
+in `container_definitions`.
+
+### <a id="tf_ecs_root"></a>`tf_ecs_root`
+
+**Severity:** MEDIUM — **Category:** terraform
+
+ECS task runs container as root. ECS task definition with `user: root` or
+`user: 0` in `container_definitions`.
 
 ## Terraform — GCP (4 rules)
 
