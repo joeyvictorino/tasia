@@ -154,8 +154,9 @@ func runReview(args []string) error {
 	// Rules
 	findings := rules.Evaluate(collected)
 
-	// Apply .tasiaignore suppressions
+	// Apply .tasiaignore and inline tasia:disable suppressions
 	if pol, err := ignore.Load(absPath); err == nil {
+		pol.AddInline(ignore.ScanInline(absPath))
 		findings = filterFindings(findings, pol)
 	}
 
@@ -244,6 +245,7 @@ func runCI(args []string) error {
 	findings := rules.Evaluate(collected)
 
 	if pol, err := ignore.Load(absPath); err == nil {
+		pol.AddInline(ignore.ScanInline(absPath))
 		findings = filterFindings(findings, pol)
 	}
 
@@ -383,6 +385,7 @@ func runExplain(args []string) error {
 	findings := rules.Evaluate(collected)
 
 	if pol, err := ignore.Load(absPath); err == nil {
+		pol.AddInline(ignore.ScanInline(absPath))
 		findings = filterFindings(findings, pol)
 	}
 
@@ -443,7 +446,7 @@ func runExplain(args []string) error {
 func filterFindings(findings []rules.Finding, pol *ignore.Policy) []rules.Finding {
 	var kept []rules.Finding
 	for _, f := range findings {
-		if !pol.Suppresses(f.ID, f.File) {
+		if !pol.SuppressesAt(f.ID, f.File, f.Line) {
 			kept = append(kept, f)
 		}
 	}
@@ -559,6 +562,7 @@ func scanDir(path string) []rules.Finding {
 	}
 	findings := rules.Evaluate(collected)
 	if pol, err := ignore.Load(absPath); err == nil {
+		pol.AddInline(ignore.ScanInline(absPath))
 		findings = filterFindings(findings, pol)
 	}
 	if cfg, err := config.Load(absPath); err == nil {

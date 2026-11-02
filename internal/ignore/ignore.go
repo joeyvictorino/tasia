@@ -17,9 +17,11 @@ type Entry struct {
 	FilePattern string // empty means "any file"; supports filepath.Match globs
 }
 
-// Policy holds the parsed ignore rules from a .tasiaignore file.
+// Policy holds the parsed ignore rules from a .tasiaignore file and any
+// inline tasia:disable directives found in source files.
 type Policy struct {
-	Entries []Entry
+	Entries    []Entry
+	InlineKeys map[inlineKey]bool
 }
 
 // Load reads a .tasiaignore from the given directory root. Returns a zero
@@ -101,7 +103,8 @@ func Parse(r *os.File) (*Policy, error) {
 	return &Policy{Entries: entries}, nil
 }
 
-// Suppresses returns true if the policy says this finding should be hidden.
+// Suppresses returns true if the policy says this finding should be hidden
+// (file-level .tasiaignore check only; use SuppressesAt for line-level).
 func (p *Policy) Suppresses(ruleID, file string) bool {
 	for _, e := range p.Entries {
 		if e.matchesRule(ruleID) && e.matchesFile(file) {
@@ -109,6 +112,31 @@ func (p *Policy) Suppresses(ruleID, file string) bool {
 		}
 	}
 	return false
+}
+
+// SuppressesAt returns true if either a .tasiaignore entry or an inline
+// tasia:disable directive suppresses this finding.
+func (p *Policy) SuppressesAt(ruleID, file string, line int) bool {
+	if p.Suppresses(ruleID, file) {
+		return true
+	}
+	if p.InlineKeys != nil && p.InlineKeys[inlineKey{File: file, Line: line, RuleID: ruleID}] {
+		return true
+	}
+	return false
+}
+
+// AddInline merges inline suppressions into the policy.
+func (p *Policy) AddInline(keys map[inlineKey]bool) {
+	if len(keys) == 0 {
+		return
+	}
+	if p.InlineKeys == nil {
+		p.InlineKeys = make(map[inlineKey]bool)
+	}
+	for k := range keys {
+		p.InlineKeys[k] = true
+	}
 }
 
 func (e *Entry) matchesRule(id string) bool {
