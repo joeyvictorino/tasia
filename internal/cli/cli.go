@@ -196,6 +196,10 @@ func Run(args []string) error {
 		return runPidns(args[1:])
 	case "ipc":
 		return runIpcns(args[1:])
+	case "sysctls":
+		return runSysctls(args[1:])
+	case "devices":
+		return runDevices(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

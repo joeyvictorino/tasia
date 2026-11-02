@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -108,6 +108,14 @@ _tasia() {
         'tmpfs:Analyze tmpfs mount security'
         'dns:Audit DNS configuration in compose services'
         'labels:Audit container label security'
+        'cgroups:Audit cgroup resource limits'
+        'signals:Audit container signal handling'
+        'user-ns:Audit user namespace configuration'
+        'seccomp:Audit seccomp profile configuration'
+        'pid-ns:Audit PID namespace sharing'
+        'ipc:Audit IPC namespace sharing'
+        'sysctls:Audit kernel sysctl settings'
+        'devices:Audit device access mappings'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -417,6 +425,12 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
+                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
             esac
             ;;
     esac
@@ -635,6 +649,38 @@ complete -c tasia -n '__fish_seen_subcommand_from config-check' -l path -d 'Path
 complete -c tasia -n '__fish_seen_subcommand_from config-check' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from config-check' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from config-check' -l fail-on -d 'Failure threshold' -r -a 'high medium low'
+complete -c tasia -n '__fish_use_subcommand' -a 'cgroups' -d 'Audit cgroup resource limits'
+complete -c tasia -n '__fish_seen_subcommand_from cgroups' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from cgroups' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from cgroups' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'signals' -d 'Audit container signal handling'
+complete -c tasia -n '__fish_seen_subcommand_from signals' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from signals' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from signals' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'user-ns' -d 'Audit user namespace configuration'
+complete -c tasia -n '__fish_seen_subcommand_from user-ns' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from user-ns' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from user-ns' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'seccomp' -d 'Audit seccomp profile configuration'
+complete -c tasia -n '__fish_seen_subcommand_from seccomp' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from seccomp' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from seccomp' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'pid-ns' -d 'Audit PID namespace sharing'
+complete -c tasia -n '__fish_seen_subcommand_from pid-ns' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from pid-ns' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from pid-ns' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'ipc' -d 'Audit IPC namespace sharing'
+complete -c tasia -n '__fish_seen_subcommand_from ipc' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from ipc' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from ipc' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'sysctls' -d 'Audit kernel sysctl settings'
+complete -c tasia -n '__fish_seen_subcommand_from sysctls' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from sysctls' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from sysctls' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'devices' -d 'Audit device access mappings'
+complete -c tasia -n '__fish_seen_subcommand_from devices' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from devices' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from devices' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 

@@ -83,6 +83,12 @@ type Service struct {
 	// Labels
 	Labels    map[string]string
 	LabelsLine int
+	// Sysctls
+	Sysctls     map[string]string
+	SysctlsLine int
+	// Devices
+	Devices     []string
+	DevicesLine int
 }
 
 // Healthcheck represents the healthcheck block in a compose service.
@@ -452,6 +458,31 @@ func Parse(path string) (*File, error) {
 					}
 				} else {
 					svc.Tmpfs = append(svc.Tmpfs, tmpfsNode.Value)
+				}
+			}
+			// sysctls
+			sysctlsNode := getMapValue(svcNode, "sysctls")
+			if sysctlsNode != nil {
+				svc.SysctlsLine = sysctlsNode.Line
+				svc.Sysctls = map[string]string{}
+				if sysctlsNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(sysctlsNode.Content); j += 2 {
+						svc.Sysctls[sysctlsNode.Content[j].Value] = sysctlsNode.Content[j+1].Value
+					}
+				} else if sysctlsNode.Kind == yaml.SequenceNode {
+					for _, s := range sysctlsNode.Content {
+						if idx := strings.Index(s.Value, "="); idx > 0 {
+							svc.Sysctls[s.Value[:idx]] = s.Value[idx+1:]
+						}
+					}
+				}
+			}
+			// devices
+			devicesNode := getMapValue(svcNode, "devices")
+			if devicesNode != nil {
+				svc.DevicesLine = devicesNode.Line
+				for _, d := range devicesNode.Content {
+					svc.Devices = append(svc.Devices, d.Value)
 				}
 			}
 			f.Services = append(f.Services, svc)
