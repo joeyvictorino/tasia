@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint service-map completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -134,6 +134,7 @@ _tasia() {
         'workload:Classify container workloads by type'
         'attack-surface:Cross-service attack surface scoring'
         'compose-lint:Docker-compose best practice linting'
+        'service-map:Service dependency topology map'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -443,7 +444,7 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
-                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload)
+                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|service-map)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
                         '--format[output format]:(text json)' \
@@ -487,6 +488,10 @@ complete -c tasia -n '__fish_use_subcommand' -a 'compliance' -d 'Map findings to
 complete -c tasia -n '__fish_use_subcommand' -a 'coverage' -d 'Show rule coverage report'
 complete -c tasia -n '__fish_use_subcommand' -a 'attack-surface' -d 'Cross-service attack surface scoring'
 complete -c tasia -n '__fish_use_subcommand' -a 'compose-lint' -d 'Docker-compose best practice linting'
+complete -c tasia -n '__fish_use_subcommand' -a 'service-map' -d 'Service dependency topology map'
+complete -c tasia -n '__fish_seen_subcommand_from service-map' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from service-map' -l format -d 'Output format' -r -a 'text json dot'
+complete -c tasia -n '__fish_seen_subcommand_from service-map' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'
