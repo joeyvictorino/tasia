@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -81,6 +81,8 @@ _tasia() {
         'coverage:Show rule coverage report'
         'snapshot:Capture security state at a point in time'
         'drift:Compare two security snapshots'
+        'policy:Generate security policy document from scan results'
+        'audit-trail:Manage append-only scan history log'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -217,6 +219,22 @@ _tasia() {
                         '--current[current snapshot file]:file:_files' \
                         '--format[output format]:(text json)'
                     ;;
+                policy)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json markdown)' \
+                        '--output[output file]:file:_files' \
+                        '--title[policy document title]' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                audit-trail)
+                    _arguments \
+                        '1:subcommand:(record show latest)' \
+                        '--path[path to scan]:directory:_directories' \
+                        '--trail[audit trail file]:file:_files' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
             esac
             ;;
     esac
@@ -316,6 +334,18 @@ complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l recursive -d 'Sca
 complete -c tasia -n '__fish_seen_subcommand_from drift' -l base -d 'Base snapshot file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from drift' -l current -d 'Current snapshot file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from drift' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_use_subcommand' -a 'policy' -d 'Generate security policy document'
+complete -c tasia -n '__fish_use_subcommand' -a 'audit-trail' -d 'Manage append-only scan history log'
+complete -c tasia -n '__fish_seen_subcommand_from policy' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from policy' -l format -d 'Output format' -r -a 'text json markdown'
+complete -c tasia -n '__fish_seen_subcommand_from policy' -l output -d 'Output file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from policy' -l title -d 'Policy document title'
+complete -c tasia -n '__fish_seen_subcommand_from policy' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -a 'record show latest' -d 'Audit trail subcommand'
+complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l trail -d 'Audit trail file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 

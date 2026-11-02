@@ -126,6 +126,10 @@ func Run(args []string) error {
 		return runCompliance(args[1:])
 	case "coverage":
 		return runCoverage(args[1:])
+	case "policy":
+		return runPolicy(args[1:])
+	case "audit-trail":
+		return runAuditTrail(args[1:])
 	case "snapshot":
 		return runSnapshot(args[1:])
 	case "drift":
@@ -196,6 +200,8 @@ Usage:
   tasia tags [list|add|remove] [--path .] [--rule RULE] [--tag TAG] [--note TEXT]
   tasia compliance [--path .] [--framework all|SOC2|NIST-AI-RMF|OWASP-LLM-Top10] [--format text|json] [--recursive]
   tasia coverage [--path .] [--format text|json] [--recursive]
+  tasia policy [--path .] [--format text|json|markdown] [--output FILE] [--title TEXT] [--recursive]
+  tasia audit-trail [record|show|latest] [--path .] [--trail FILE] [--format text|json]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
