@@ -304,6 +304,10 @@ func Run(args []string) error {
 		return runLogDriver(args[1:])
 	case "cpu-pin":
 		return runCpuPin(args[1:])
+	case "cpu-shares":
+		return runCpuShares(args[1:])
+	case "dep-chain":
+		return runDepChain(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
