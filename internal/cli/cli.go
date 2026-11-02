@@ -352,6 +352,12 @@ func Run(args []string) error {
 		return runNetfilter(args[1:])
 	case "logdriver":
 		return runLogdriver(args[1:])
+	case "copyadd":
+		return runCopyadd(args[1:])
+	case "buildcache":
+		return runBuildcache(args[1:])
+	case "layeraudit":
+		return runLayeraudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
