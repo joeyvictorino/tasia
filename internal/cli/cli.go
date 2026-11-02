@@ -160,6 +160,10 @@ func Run(args []string) error {
 		return runAPI(args[1:])
 	case "config-check":
 		return runConfigCheck(args[1:])
+	case "merge-check":
+		return runMergeCheck(args[1:])
+	case "port-map":
+		return runPortMap(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -231,6 +235,8 @@ Usage:
   tasia audit-trail [record|show|latest] [--path .] [--trail FILE] [--format text|json]
   tasia api [--path .] [--port 8080] [--recursive] [--cors-origin *]
   tasia config-check [--path .] [--format text|json] [--recursive] [--fail-on high|medium|low]
+  tasia merge-check [--path .] [--format text|json] [--recursive]
+  tasia port-map [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
