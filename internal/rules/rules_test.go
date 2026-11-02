@@ -522,6 +522,74 @@ func TestAgentAutoApproveNotFlaggedOnNonAgent(t *testing.T) {
 	}
 }
 
+func TestAgentTestMountDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				// test dir writable on agent: HIGH
+				{Name: "n8n", Image: "n8nio/n8n:1.60", VolumesLine: 4,
+					Volumes: []string{"./tests:/app/tests", "data:/data"}},
+				// fixtures dir writable on agent: HIGH
+				{Name: "flowise", Image: "flowiseai/flowise:2.1", VolumesLine: 8,
+					Volumes: []string{"./fixtures:/app/fixtures"}},
+				// test dir read-only: NOT flagged
+				{Name: "langflow", Image: "langflowai/langflow:1.1", VolumesLine: 12,
+					Volumes: []string{"./tests:/app/tests:ro"}},
+				// non-agent with test dir: NOT flagged
+				{Name: "app", Image: "myorg/app:1.2", VolumesLine: 16,
+					Volumes: []string{"./tests:/app/tests"}},
+			},
+		}},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "agent_test_mount" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 2 {
+		t.Fatalf("expected 2 agent_test_mount findings (n8n + flowise), got %d: %+v", len(found), found)
+	}
+	for _, f := range found {
+		if f.Severity != SeverityHigh {
+			t.Errorf("agent_test_mount should be HIGH, got %s", f.Severity)
+		}
+	}
+}
+
+func TestAgentTestMountVariants(t *testing.T) {
+	mk := func(vol string) *collect.Collected {
+		return &collect.Collected{Root: ".", ComposeFiles: []compose.File{{Path: "c.yml",
+			Services: []compose.Service{{Name: "n8n", Image: "n8nio/n8n:1.60", VolumesLine: 4, Volumes: []string{vol}}}}}}
+	}
+	flagged := func(vol string) bool {
+		for _, f := range Evaluate(mk(vol)) {
+			if f.ID == "agent_test_mount" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, vol := range []string{
+		"./test:/work", "./tests:/work", "./spec:/work", "./fixtures:/work",
+		"./__tests__:/work", "./testdata:/work", "./e2e:/work",
+	} {
+		if !flagged(vol) {
+			t.Errorf("%q should trigger agent_test_mount", vol)
+		}
+	}
+	// read-only should not trigger
+	if flagged("./tests:/work:ro") {
+		t.Error("read-only test mount should NOT trigger")
+	}
+	// unrelated path
+	if flagged("./src:/work") {
+		t.Error("non-test path should NOT trigger")
+	}
+}
+
 func TestAgentAutoRestartDetected(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",

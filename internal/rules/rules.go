@@ -101,6 +101,7 @@ func evaluateService(relCompose string, svc compose.Service, stackHasAI bool) []
 	out = append(out, environmentFindings(svc, relCompose)...)
 	out = append(out, agentAutoApproveFindings(svc, relCompose)...)
 	appendIf(agentAutoRestartFinding(svc, relCompose))
+	out = append(out, agentTestMountFindings(svc, relCompose)...)
 
 	return out
 }
@@ -351,6 +352,55 @@ func agentAutoRestartFinding(svc compose.Service, relCompose string) (Finding, b
 		Why:      "An agent runtime that restarts automatically after a crash can retry destructive model-written actions in a loop without human intervention.",
 		Fix:      "Use restart: on-failure with a max retry count, or restart: no, and monitor the service externally.",
 	}, true
+}
+
+// testDirPrefixes are path prefixes that indicate test or fixture directories.
+var testDirPrefixes = []string{
+	"test/", "tests/", "test\\", "tests\\",
+	"spec/", "spec\\",
+	"fixtures/", "fixtures\\",
+	"__tests__/", "__tests__\\",
+	"testdata/", "testdata\\",
+	"e2e/", "e2e\\",
+	"./test/", "./tests/", "./spec/", "./fixtures/", "./__tests__/", "./testdata/", "./e2e/",
+}
+
+// agentTestMountFindings flags agent runtimes that have test or fixture
+// directories bind-mounted writable. An agent that can rewrite the tests that
+// judge its own output makes "all tests pass" meaningless.
+func agentTestMountFindings(svc compose.Service, relCompose string) []Finding {
+	if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+		return nil
+	}
+	var out []Finding
+	for _, v := range svc.Volumes {
+		if isReadOnlyMount(v) {
+			continue
+		}
+		hostPath := strings.ToLower(v)
+		if i := strings.Index(hostPath, ":"); i >= 0 {
+			hostPath = hostPath[:i]
+		}
+		if !strings.HasSuffix(hostPath, "/") {
+			hostPath += "/"
+		}
+		for _, prefix := range testDirPrefixes {
+			if strings.Contains(hostPath, prefix) {
+				out = append(out, Finding{
+					ID:       "agent_test_mount",
+					Severity: SeverityHigh,
+					Title:    "agent runtime has writable test/fixture mount",
+					File:     relCompose,
+					Line:     svc.VolumesLine,
+					Evidence: fmt.Sprintf("service=%s volume=%s", svc.Name, v),
+					Why:      "A writable mount of test or fixture directories into an agent runtime lets the agent rewrite the tests and expected outputs that judge its own work. A passing suite then proves nothing.",
+					Fix:      "Mount test directories read-only (:ro) or keep them outside anything the agent can write.",
+				})
+				break
+			}
+		}
+	}
+	return out
 }
 
 // environmentFindings inspects compose environment entries for secret key names
