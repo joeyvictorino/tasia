@@ -204,6 +204,10 @@ func Run(args []string) error {
 		return runUlimits(args[1:])
 	case "runtime":
 		return runRuntimeAudit(args[1:])
+	case "depends":
+		return runDepends(args[1:])
+	case "entrypoint":
+		return runEntrypoint(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

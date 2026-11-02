@@ -92,6 +92,14 @@ type Service struct {
 	// Ulimits
 	Ulimits     map[string]UlimitValue
 	UlimitsLine int
+	// DependsOn
+	DependsOn     map[string]DependsOnCondition
+	DependsOnLine int
+	// Entrypoint / Command
+	Entrypoint     []string
+	EntrypointLine int
+	Command        []string
+	CommandLine    int
 	// Runtime fields
 	StdinOpen         bool
 	StdinOpenLine     int
@@ -109,6 +117,11 @@ type Service struct {
 type UlimitValue struct {
 	Soft int64
 	Hard int64
+}
+
+// DependsOnCondition represents a depends_on entry with an optional condition.
+type DependsOnCondition struct {
+	Condition string // "service_started", "service_healthy", "service_completed_successfully", or ""
 }
 
 // Healthcheck represents the healthcheck block in a compose service.
@@ -503,6 +516,53 @@ func Parse(path string) (*File, error) {
 				svc.DevicesLine = devicesNode.Line
 				for _, d := range devicesNode.Content {
 					svc.Devices = append(svc.Devices, d.Value)
+				}
+			}
+			// depends_on
+			depsNode := getMapValue(svcNode, "depends_on")
+			if depsNode != nil {
+				svc.DependsOnLine = depsNode.Line
+				svc.DependsOn = map[string]DependsOnCondition{}
+				if depsNode.Kind == yaml.SequenceNode {
+					for _, d := range depsNode.Content {
+						svc.DependsOn[d.Value] = DependsOnCondition{}
+					}
+				} else if depsNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(depsNode.Content); j += 2 {
+						depName := depsNode.Content[j].Value
+						depVal := depsNode.Content[j+1]
+						cond := DependsOnCondition{}
+						if depVal.Kind == yaml.MappingNode {
+							if c := getScalar(depVal, "condition"); c != "" {
+								cond.Condition = c
+							}
+						}
+						svc.DependsOn[depName] = cond
+					}
+				}
+			}
+			// entrypoint
+			epNode := getMapValue(svcNode, "entrypoint")
+			if epNode != nil {
+				svc.EntrypointLine = epNode.Line
+				if epNode.Kind == yaml.SequenceNode {
+					for _, e := range epNode.Content {
+						svc.Entrypoint = append(svc.Entrypoint, e.Value)
+					}
+				} else {
+					svc.Entrypoint = []string{epNode.Value}
+				}
+			}
+			// command
+			cmdNode := getMapValue(svcNode, "command")
+			if cmdNode != nil {
+				svc.CommandLine = cmdNode.Line
+				if cmdNode.Kind == yaml.SequenceNode {
+					for _, c := range cmdNode.Content {
+						svc.Command = append(svc.Command, c.Value)
+					}
+				} else {
+					svc.Command = []string{cmdNode.Value}
 				}
 			}
 			// ulimits
