@@ -100,6 +100,8 @@ func Run(args []string) error {
 		return runLint(args[1:])
 	case "doctor":
 		return runDoctor(args[1:])
+	case "bench":
+		return runBench(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
