@@ -975,3 +975,181 @@ func TestDatastoreEscalatesAlongsideAgentRuntime(t *testing.T) {
 		}
 	}
 }
+
+func TestCaddyfileNoAuthDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ReverseProxyConfigs: []collect.ReverseProxyConfig{
+			collect.ParseCaddyfile("Caddyfile", `
+:80 {
+	reverse_proxy ollama:11434
+}
+`),
+		},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "reverse_proxy_no_auth" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 reverse_proxy_no_auth, got %d", len(found))
+	}
+	if found[0].Severity != SeverityMedium {
+		t.Errorf("expected MEDIUM, got %s", found[0].Severity)
+	}
+	if !strings.Contains(found[0].Evidence, "reverse_proxy") {
+		t.Errorf("evidence should mention reverse_proxy: %s", found[0].Evidence)
+	}
+}
+
+func TestCaddyfileWithAuthNotFlagged(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ReverseProxyConfigs: []collect.ReverseProxyConfig{
+			collect.ParseCaddyfile("Caddyfile", `
+:443 {
+	basic_auth {
+		admin $2a$14$hash
+	}
+	reverse_proxy open-webui:3000
+}
+`),
+		},
+	}
+	for _, f := range Evaluate(c) {
+		if f.ID == "reverse_proxy_no_auth" {
+			t.Errorf("authenticated reverse_proxy should not be flagged: %+v", f)
+		}
+	}
+}
+
+func TestCaddyfileForwardAuthNotFlagged(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ReverseProxyConfigs: []collect.ReverseProxyConfig{
+			collect.ParseCaddyfile("Caddyfile", `
+:443 {
+	forward_auth authelia:9091 {
+		uri /api/verify
+	}
+	reverse_proxy vllm:8000
+}
+`),
+		},
+	}
+	for _, f := range Evaluate(c) {
+		if f.ID == "reverse_proxy_no_auth" {
+			t.Errorf("forward_auth-protected proxy should not be flagged: %+v", f)
+		}
+	}
+}
+
+func TestNginxNoAuthDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ReverseProxyConfigs: []collect.ReverseProxyConfig{
+			collect.ParseNginxConf("nginx.conf", `
+server {
+    listen 80;
+    location / {
+        proxy_pass http://ollama:11434;
+    }
+}
+`),
+		},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "reverse_proxy_no_auth" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 reverse_proxy_no_auth, got %d", len(found))
+	}
+	if found[0].Severity != SeverityMedium {
+		t.Errorf("expected MEDIUM, got %s", found[0].Severity)
+	}
+	if !strings.Contains(found[0].Evidence, "proxy_pass") {
+		t.Errorf("evidence should mention proxy_pass: %s", found[0].Evidence)
+	}
+}
+
+func TestNginxWithAuthNotFlagged(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ReverseProxyConfigs: []collect.ReverseProxyConfig{
+			collect.ParseNginxConf("nginx.conf", `
+server {
+    listen 80;
+    location / {
+        auth_basic "Restricted";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+        proxy_pass http://open-webui:3000;
+    }
+}
+`),
+		},
+	}
+	for _, f := range Evaluate(c) {
+		if f.ID == "reverse_proxy_no_auth" {
+			t.Errorf("auth_basic-protected proxy should not be flagged: %+v", f)
+		}
+	}
+}
+
+func TestNginxAuthRequestNotFlagged(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ReverseProxyConfigs: []collect.ReverseProxyConfig{
+			collect.ParseNginxConf("nginx.conf", `
+server {
+    listen 80;
+    location / {
+        auth_request /auth;
+        proxy_pass http://gradio:7860;
+    }
+}
+`),
+		},
+	}
+	for _, f := range Evaluate(c) {
+		if f.ID == "reverse_proxy_no_auth" {
+			t.Errorf("auth_request-protected proxy should not be flagged: %+v", f)
+		}
+	}
+}
+
+func TestCaddyfileMultipleProxiesMixed(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ReverseProxyConfigs: []collect.ReverseProxyConfig{
+			collect.ParseCaddyfile("Caddyfile", `
+:80 {
+	reverse_proxy /api/* ollama:11434
+}
+
+:443 {
+	basic_auth {
+		admin $2a$14$hash
+	}
+	reverse_proxy open-webui:3000
+}
+`),
+		},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "reverse_proxy_no_auth" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 unauthenticated proxy (ollama), got %d", len(found))
+	}
+	if !strings.Contains(found[0].Evidence, "ollama:11434") {
+		t.Errorf("finding should reference the unauthenticated upstream: %s", found[0].Evidence)
+	}
+}

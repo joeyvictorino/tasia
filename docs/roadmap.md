@@ -22,7 +22,7 @@
   exposes them in compose `environment:` (key names only), and warn when
   test or fixture directories are mounted writable into an agent service~~
   (done: `agent_auto_approve`, `agent_test_mount`, `agent_auto_restart`)
-- Caddyfile / nginx auth checks
+- ~~Caddyfile / nginx auth checks~~ (done: `reverse_proxy_no_auth`)
 - ~~Chroma / Weaviate auth hints~~ (done: `vector_db_no_auth`)
 - ~~Dockerfile `USER root` / `EXPOSE` analysis~~ (done: `dockerfile_user_root`, `dockerfile_expose`, `dockerfile_expose_sensitive`)
 

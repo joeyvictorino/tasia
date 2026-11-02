@@ -18,7 +18,8 @@ type Collected struct {
 	ComposeFiles       []compose.File
 	EnvFiles           []EnvFile
 	Dockerfiles        []Dockerfile
-	OtherConfigs       []string // Modelfile etc later
+	ReverseProxyConfigs []ReverseProxyConfig
+	OtherConfigs        []string // Modelfile etc later
 	DetectedRuntimes   []string
 	DetectedInterfaces []string
 	DetectedRetrieval  []string
@@ -60,6 +61,137 @@ func (e EnvFile) KeyNames() []string {
 		out = append(out, k.Name)
 	}
 	return out
+}
+
+// ReverseProxyConfig holds a parsed Caddyfile or nginx.conf with
+// security-relevant proxy and auth information.
+type ReverseProxyConfig struct {
+	Path    string
+	Kind    string // "caddyfile" or "nginx"
+	Content string
+	Proxies []ProxyBlock
+}
+
+// ProxyBlock records one reverse_proxy (Caddy) or location+proxy_pass (nginx)
+// directive with whether auth is configured for it.
+type ProxyBlock struct {
+	Upstream string
+	Line     int
+	HasAuth  bool
+}
+
+// ParseCaddyfile extracts reverse_proxy directives and whether they are
+// protected by basic_auth or forward_auth.
+func ParseCaddyfile(path, content string) ReverseProxyConfig {
+	cfg := ReverseProxyConfig{Path: path, Kind: "caddyfile", Content: content}
+	lines := strings.Split(content, "\n")
+	depth := 0
+	var currentProxy *ProxyBlock
+	blockHasAuth := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.Contains(trimmed, "{") {
+			depth++
+		}
+		if strings.Contains(trimmed, "}") {
+			if depth > 0 {
+				depth--
+			}
+			if currentProxy != nil && depth <= 1 {
+				currentProxy.HasAuth = blockHasAuth
+				cfg.Proxies = append(cfg.Proxies, *currentProxy)
+				currentProxy = nil
+				blockHasAuth = false
+			}
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "basic_auth") || strings.HasPrefix(lower, "forward_auth") {
+			blockHasAuth = true
+		}
+		if strings.HasPrefix(lower, "reverse_proxy") {
+			parts := strings.Fields(trimmed)
+			upstream := ""
+			for j := len(parts) - 1; j >= 1; j-- {
+				if parts[j] == "{" {
+					continue
+				}
+				upstream = parts[j]
+				break
+			}
+			if strings.Contains(trimmed, "{") {
+				currentProxy = &ProxyBlock{Upstream: upstream, Line: i + 1}
+			} else {
+				cfg.Proxies = append(cfg.Proxies, ProxyBlock{
+					Upstream: upstream,
+					Line:     i + 1,
+					HasAuth:  blockHasAuth,
+				})
+			}
+		}
+	}
+	if currentProxy != nil {
+		currentProxy.HasAuth = blockHasAuth
+		cfg.Proxies = append(cfg.Proxies, *currentProxy)
+	}
+	return cfg
+}
+
+// ParseNginxConf extracts proxy_pass directives and whether their enclosing
+// location block has auth_basic or auth_request.
+func ParseNginxConf(path, content string) ReverseProxyConfig {
+	cfg := ReverseProxyConfig{Path: path, Kind: "nginx", Content: content}
+	lines := strings.Split(content, "\n")
+	type locCtx struct {
+		hasAuth bool
+	}
+	var locStack []locCtx
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "location") && strings.Contains(trimmed, "{") {
+			locStack = append(locStack, locCtx{})
+		}
+		if strings.HasPrefix(lower, "auth_basic") && !strings.Contains(lower, "auth_basic_user_file") && !strings.HasSuffix(lower, "off;") {
+			if len(locStack) > 0 {
+				locStack[len(locStack)-1].hasAuth = true
+			}
+		}
+		if strings.HasPrefix(lower, "auth_request") && !strings.HasSuffix(lower, "off;") {
+			if len(locStack) > 0 {
+				locStack[len(locStack)-1].hasAuth = true
+			}
+		}
+		if strings.Contains(lower, "proxy_pass") {
+			parts := strings.Fields(trimmed)
+			upstream := ""
+			for j, p := range parts {
+				if strings.ToLower(p) == "proxy_pass" && j+1 < len(parts) {
+					upstream = strings.TrimSuffix(parts[j+1], ";")
+					break
+				}
+			}
+			hasAuth := false
+			if len(locStack) > 0 {
+				hasAuth = locStack[len(locStack)-1].hasAuth
+			}
+			cfg.Proxies = append(cfg.Proxies, ProxyBlock{
+				Upstream: upstream,
+				Line:     i + 1,
+				HasAuth:  hasAuth,
+			})
+		}
+		if strings.Contains(trimmed, "}") && len(locStack) > 0 {
+			locStack = locStack[:len(locStack)-1]
+		}
+	}
+	return cfg
 }
 
 // Dockerfile holds a parsed Dockerfile with line-level information about
@@ -146,6 +278,12 @@ func WalkAndCollect(root string) (*Collected, error) {
 		case lower == "dockerfile":
 			content, _ := os.ReadFile(path)
 			c.Dockerfiles = append(c.Dockerfiles, ParseDockerfile(rel, string(content)))
+		case lower == "caddyfile":
+			content, _ := os.ReadFile(path)
+			c.ReverseProxyConfigs = append(c.ReverseProxyConfigs, ParseCaddyfile(rel, string(content)))
+		case lower == "nginx.conf":
+			content, _ := os.ReadFile(path)
+			c.ReverseProxyConfigs = append(c.ReverseProxyConfigs, ParseNginxConf(rel, string(content)))
 		case lower == "modelfile":
 			c.OtherConfigs = append(c.OtherConfigs, rel)
 		case lower == "ai-stack-manifest.json":

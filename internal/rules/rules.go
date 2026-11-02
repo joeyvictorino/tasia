@@ -67,6 +67,7 @@ func Evaluate(c *collect.Collected) []Finding {
 
 	findings = append(findings, envFileFindings(c.EnvFiles)...)
 	findings = append(findings, dockerfileFindings(c.Dockerfiles)...)
+	findings = append(findings, reverseProxyFindings(c.ReverseProxyConfigs)...)
 	findings = append(findings, missingManifestFinding(c)...)
 
 	return dedupeFindings(findings)
@@ -597,6 +598,40 @@ func hasSensitivePort(ports string) bool {
 		}
 	}
 	return false
+}
+
+// reverseProxyFindings flags reverse proxy directives that forward to upstream
+// services without authentication. A Caddyfile reverse_proxy or nginx
+// proxy_pass without basic_auth / forward_auth / auth_request lets anyone who
+// reaches the proxy reach the upstream AI service.
+func reverseProxyFindings(configs []collect.ReverseProxyConfig) []Finding {
+	var out []Finding
+	for _, cfg := range configs {
+		for _, proxy := range cfg.Proxies {
+			if proxy.HasAuth {
+				continue
+			}
+			var kind, directive string
+			if cfg.Kind == "caddyfile" {
+				kind = "Caddyfile"
+				directive = "reverse_proxy"
+			} else {
+				kind = "nginx"
+				directive = "proxy_pass"
+			}
+			out = append(out, Finding{
+				ID:       "reverse_proxy_no_auth",
+				Severity: SeverityMedium,
+				Title:    fmt.Sprintf("%s proxies to %s without authentication", kind, proxy.Upstream),
+				File:     cfg.Path,
+				Line:     proxy.Line,
+				Evidence: fmt.Sprintf("%s %s", directive, proxy.Upstream),
+				Why:      "A reverse proxy without authentication exposes the upstream service to anyone who can reach the proxy. If the upstream is an inference API, chat UI, or agent runtime, this is an open door.",
+				Fix:      fmt.Sprintf("Add authentication to the %s block: basic_auth/forward_auth (Caddy) or auth_basic/auth_request (nginx).", directive),
+			})
+		}
+	}
+	return out
 }
 
 // missingManifestFinding notes an AI stack that lacks an inventory manifest.
