@@ -100,8 +100,8 @@ func printUsage() {
 
 Usage:
   tasia diff --base DIR --current DIR [--format text|json] [--fail-on critical|high|medium|low]
-  tasia review [--path .] [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict]
-  tasia ci [--path .] [--fail-on critical|high|medium|low]
+  tasia review [--path .] [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict] [--recursive]
+  tasia ci [--path .] [--fail-on critical|high|medium|low] [--recursive]
   tasia install --pre-push
   tasia uninstall --pre-push
   tasia explain [--path .] [--ollama llama3.1] [--ollama-host localhost:11434]
@@ -124,6 +124,7 @@ func runReview(args []string) error {
 	strict := fs.Bool("strict", false, "treat warnings as blocking too")
 	verbose := fs.Bool("verbose", false, "show why/fix/evidence details for each finding")
 	baselinePath := fs.String("baseline", "", "SARIF file of known findings to suppress")
+	recursive := fs.Bool("recursive", false, "scan nested directories in monorepos")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -138,39 +139,46 @@ func runReview(args []string) error {
 
 	t0 := time.Now()
 
-	// Collect
-	collected, err := collect.WalkAndCollect(absPath)
-	if err != nil {
-		return err
-	}
-
-	// Fail closed: an unparseable config cannot be vouched for. Report ERROR,
-	// write nothing, and exit 2 rather than a misleading PASS.
-	if len(collected.ParseErrors) > 0 {
-		switch *format {
-		case "json":
-			fmt.Println(report.ErrorJSON(collected.ParseErrors))
-		case "sarif":
-			out, _ := report.FindingsToSARIF(nil, versionString())
-			fmt.Println(out)
-		default:
-			report.PrintErrorVerdict(collected.ParseErrors)
+	var findings []rules.Finding
+	var collected *collect.Collected
+	if *recursive {
+		findings = scanRecursive(absPath)
+	} else {
+		// Collect
+		var err error
+		collected, err = collect.WalkAndCollect(absPath)
+		if err != nil {
+			return err
 		}
-		os.Exit(2)
-	}
 
-	// Rules
-	findings := rules.Evaluate(collected)
+		// Fail closed: an unparseable config cannot be vouched for. Report ERROR,
+		// write nothing, and exit 2 rather than a misleading PASS.
+		if len(collected.ParseErrors) > 0 {
+			switch *format {
+			case "json":
+				fmt.Println(report.ErrorJSON(collected.ParseErrors))
+			case "sarif":
+				out, _ := report.FindingsToSARIF(nil, versionString())
+				fmt.Println(out)
+			default:
+				report.PrintErrorVerdict(collected.ParseErrors)
+			}
+			os.Exit(2)
+		}
 
-	// Apply .tasiaignore and inline tasia:disable suppressions
-	if pol, err := ignore.Load(absPath); err == nil {
-		pol.AddInline(ignore.ScanInline(absPath))
-		findings = filterFindings(findings, pol)
-	}
+		// Rules
+		findings = rules.Evaluate(collected)
 
-	// Apply severity overrides from .tasiarc.yaml
-	if cfg, err := config.Load(absPath); err == nil {
-		findings = applySeverityOverrides(findings, cfg)
+		// Apply .tasiaignore and inline tasia:disable suppressions
+		if pol, err := ignore.Load(absPath); err == nil {
+			pol.AddInline(ignore.ScanInline(absPath))
+			findings = filterFindings(findings, pol)
+		}
+
+		// Apply severity overrides from .tasiarc.yaml
+		if cfg, err := config.Load(absPath); err == nil {
+			findings = applySeverityOverrides(findings, cfg)
+		}
 	}
 
 	// Apply SARIF baseline filtering
@@ -186,11 +194,17 @@ func runReview(args []string) error {
 	decision, risk := report.Decide(findings, *failOn, *strict)
 
 	durationMs := time.Since(t0).Milliseconds()
-	summary := report.BuildSummary(findings, collected.FilesScanned(), durationMs)
+
+	// In recursive mode collected is nil; build summary from findings count.
+	var filesScanned int
+	if collected != nil {
+		filesScanned = collected.FilesScanned()
+	}
+	summary := report.BuildSummary(findings, filesScanned, durationMs)
 
 	// Write unless no-write (do this first so side-effects don't affect format)
 	wrotePath := ""
-	if !*noWrite {
+	if !*noWrite && collected != nil {
 		outDir := filepath.Join(absPath, ".tasia")
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			return err
@@ -241,6 +255,7 @@ func runCI(args []string) error {
 	failOn := fs.String("fail-on", "high", "fail level: critical, high, medium, low")
 	baselinePath := fs.String("baseline", "", "SARIF file of known findings to suppress")
 	verbose := fs.Bool("verbose", false, "show why/fix/evidence details for each finding")
+	recursive := fs.Bool("recursive", false, "scan nested directories in monorepos")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -253,27 +268,32 @@ func runCI(args []string) error {
 		return err
 	}
 
-	collected, err := collect.WalkAndCollect(absPath)
-	if err != nil {
-		return err
-	}
+	var findings []rules.Finding
+	if *recursive {
+		findings = scanRecursive(absPath)
+	} else {
+		collected, err := collect.WalkAndCollect(absPath)
+		if err != nil {
+			return err
+		}
 
-	// Fail closed on unparseable config: a gate must not pass what it can't read.
-	if len(collected.ParseErrors) > 0 {
-		report.PrintErrorVerdict(collected.ParseErrors)
-		fmt.Fprintln(os.Stderr, "CI error: unparseable config; failing closed")
-		os.Exit(2)
-	}
+		// Fail closed on unparseable config: a gate must not pass what it can't read.
+		if len(collected.ParseErrors) > 0 {
+			report.PrintErrorVerdict(collected.ParseErrors)
+			fmt.Fprintln(os.Stderr, "CI error: unparseable config; failing closed")
+			os.Exit(2)
+		}
 
-	findings := rules.Evaluate(collected)
+		findings = rules.Evaluate(collected)
 
-	if pol, err := ignore.Load(absPath); err == nil {
-		pol.AddInline(ignore.ScanInline(absPath))
-		findings = filterFindings(findings, pol)
-	}
+		if pol, err := ignore.Load(absPath); err == nil {
+			pol.AddInline(ignore.ScanInline(absPath))
+			findings = filterFindings(findings, pol)
+		}
 
-	if cfg, err := config.Load(absPath); err == nil {
-		findings = applySeverityOverrides(findings, cfg)
+		if cfg, err := config.Load(absPath); err == nil {
+			findings = applySeverityOverrides(findings, cfg)
+		}
 	}
 
 	if *baselinePath != "" {
