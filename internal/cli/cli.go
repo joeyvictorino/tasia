@@ -88,6 +88,10 @@ func Run(args []string) error {
 		return runFmt(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
+	case "inventory":
+		return runInventory(args[1:])
+	case "graph":
+		return runGraph(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -137,6 +141,8 @@ Usage:
   tasia validate [--path .] [--format text|json]
   tasia fmt [--path .tasiarc.yaml] [--check] [--diff]
   tasia migrate [--path .tasiarc.yaml] [--dry-run]
+  tasia inventory [--path .] [--format text|json] [--recursive]
+  tasia graph [--path .] [--format text|dot|mermaid] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version

@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate install uninstall explain rules schema init watch profile completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph install uninstall explain rules schema init watch profile completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -71,6 +71,8 @@ _tasia() {
         'validate:Check config files for errors'
         'fmt:Format and normalize .tasiarc.yaml'
         'migrate:Upgrade config to latest schema'
+        'inventory:List stack services, ports, volumes and networks'
+        'graph:Visualize service dependency graph'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -145,6 +147,18 @@ _tasia() {
                         '--path[config file]:file:_files' \
                         '--dry-run[show changes without writing]'
                     ;;
+                inventory)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                graph)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text dot mermaid)' \
+                        '--recursive[scan nested directories]'
+                    ;;
             esac
             ;;
     esac
@@ -173,6 +187,8 @@ complete -c tasia -n '__fish_use_subcommand' -a 'export' -d 'Export findings as 
 complete -c tasia -n '__fish_use_subcommand' -a 'validate' -d 'Check config files for errors'
 complete -c tasia -n '__fish_use_subcommand' -a 'fmt' -d 'Format and normalize .tasiarc.yaml'
 complete -c tasia -n '__fish_use_subcommand' -a 'migrate' -d 'Upgrade config to latest schema'
+complete -c tasia -n '__fish_use_subcommand' -a 'inventory' -d 'List stack services, ports, volumes and networks'
+complete -c tasia -n '__fish_use_subcommand' -a 'graph' -d 'Visualize service dependency graph'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'
@@ -202,6 +218,12 @@ complete -c tasia -n '__fish_seen_subcommand_from fmt' -l check -d 'Exit 1 if fi
 complete -c tasia -n '__fish_seen_subcommand_from fmt' -l diff -d 'Show what would change'
 complete -c tasia -n '__fish_seen_subcommand_from migrate' -l path -d 'Config file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from migrate' -l dry-run -d 'Show changes without writing'
+complete -c tasia -n '__fish_seen_subcommand_from inventory' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from inventory' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from inventory' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from graph' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from graph' -l format -d 'Output format' -r -a 'text dot mermaid'
+complete -c tasia -n '__fish_seen_subcommand_from graph' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
