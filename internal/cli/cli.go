@@ -104,6 +104,10 @@ func Run(args []string) error {
 		return runScanCmd(args[1:])
 	case "ignore":
 		return runIgnoreCmd(args[1:])
+	case "suggest":
+		return runSuggest(args[1:])
+	case "history":
+		return runHistory(args[1:])
 	case "metrics":
 		return runMetrics(args[1:])
 	case "tags":
@@ -170,6 +174,8 @@ Usage:
   tasia bench [--path .] [--iterations 5] [--format text|json]
   tasia scan [--path .] [--files FILE,...] [--rules ID,...] [--format text|json] [--fail-on critical|high|medium|low]
   tasia ignore [list|add|remove] [--path .] [--pattern PATTERN] [--format text|json]
+  tasia suggest [--path .] [--severity LEVEL] [--format text|json]
+  tasia history [list|record|clear] [--path .] [--last N] [--format text|json]
   tasia metrics --dir DIR [--format text|json]
   tasia tags [list|add|remove] [--path .] [--rule RULE] [--tag TAG] [--note TEXT]
   tasia completions --shell bash|zsh|fish
