@@ -188,6 +188,10 @@ func Run(args []string) error {
 		return runCgroups(args[1:])
 	case "signals":
 		return runSignals(args[1:])
+	case "user-ns":
+		return runUserns(args[1:])
+	case "seccomp":
+		return runSeccomp(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

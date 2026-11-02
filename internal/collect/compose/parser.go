@@ -71,6 +71,9 @@ type Service struct {
 	DNSLine      int
 	DNSSearch    []string
 	DNSSearchLine int
+	// User namespace mode
+	UsernsMode     string
+	UsernsModeLine int
 	// Labels
 	Labels    map[string]string
 	LabelsLine int
@@ -186,6 +189,12 @@ func Parse(path string) (*File, error) {
 			if nmNode != nil {
 				svc.NetworkMode = strings.Trim(nmNode.Value, `"' `)
 				svc.NetworkModeLine = nmNode.Line
+			}
+			// userns_mode
+			unsNode := getMapValue(svcNode, "userns_mode")
+			if unsNode != nil {
+				svc.UsernsMode = strings.Trim(unsNode.Value, `"' `)
+				svc.UsernsModeLine = unsNode.Line
 			}
 			// restart
 			restartNode := getMapValue(svcNode, "restart")
