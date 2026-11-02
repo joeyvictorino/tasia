@@ -54,52 +54,91 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 
 ## What it checks
 
-| Rule | Severity |
-|------|----------|
-| Inference API (Ollama, vLLM, llama.cpp, LM Studio) published to all interfaces, including `network_mode: host` | HIGH |
-| Open WebUI or Gradio published to all interfaces | HIGH |
-| Vector DB (Qdrant, Chroma, Weaviate, Milvus) published to the host | HIGH |
-| Data store (Redis, Valkey, Postgres, pgvector) published to all interfaces | HIGH alongside AI components, else MEDIUM |
-| Agent runtime (n8n, Flowise, Langflow, Dify, OpenHands, Open Interpreter and similar) published to all interfaces, including `network_mode: host` | HIGH |
-| Docker socket mounted | CRITICAL |
-| `privileged: true` | CRITICAL |
-| Permissive CORS such as `OLLAMA_ORIGINS=*` | HIGH |
-| Token or secret key names in `.env*` or compose `environment:` (names only, values are never read into findings) | MEDIUM |
-| Value matches a known secret pattern (`sk-`, `ghp_`, `AKIA`, JWT, hex/base64 blob); value never emitted, only the key name and pattern | HIGH |
-| `image:` with `:latest` or no tag | MEDIUM |
-| Broad, writable bind mounts such as `.:/app` | MEDIUM, HIGH on an agent runtime |
-| Auto-approve or code-execution settings on an agent runtime (`N8N_ALLOW_EXEC`, `FLOWISE_ALLOW_CODE_EXEC`, `AUTO_APPROVE` and similar) | HIGH |
-| Secret key shared across multiple agent runtimes | HIGH |
-| Test or fixture directories (`test/`, `spec/`, `fixtures/`, `__tests__`, `testdata/`, `e2e/`) bind-mounted writable into an agent runtime | HIGH |
-| Agent runtime with `restart: always` or `unless-stopped` (can retry destructive actions in a loop) | MEDIUM |
-| Chroma or Weaviate without authentication configuration | LOW |
-| Multi-service stack publishing ports with no `internal: true` network | MEDIUM |
-| Dockerfile `USER root` or `USER 0` (runs as root) | HIGH |
-| Dockerfile with no `USER` directive (defaults to root) | MEDIUM |
-| Dockerfile `EXPOSE` of a sensitive port (databases, SSH, Docker daemon) | MEDIUM |
-| Caddyfile or nginx reverse proxy without authentication | MEDIUM |
-| Kubernetes Service type LoadBalancer or NodePort | HIGH |
-| Kubernetes container with `privileged: true` | CRITICAL |
-| Kubernetes container running as root (`runAsUser: 0` or `runAsNonRoot: false`) | HIGH |
-| Kubernetes pod with `hostNetwork: true` | HIGH |
-| Kubernetes hostPath volume mount (CRITICAL for sensitive paths like Docker socket) | HIGH–CRITICAL |
-| Kubernetes workloads without a NetworkPolicy | MEDIUM |
-| Helm `values.yaml` insecure defaults (privileged, hostNetwork, runAsUser 0, LoadBalancer/NodePort, hostPath) | CRITICAL–HIGH |
-| Terraform security group allowing all inbound traffic (`0.0.0.0/0` with all ports) | CRITICAL |
-| Terraform security group exposing sensitive port (SSH, DB, Docker daemon) to internet | HIGH |
-| Terraform security group with any internet ingress (`0.0.0.0/0`) | MEDIUM |
-| Terraform S3 bucket with `public-read` or `public-read-write` ACL | HIGH |
-| Terraform IAM policy with `Action: *` and `Resource: *` (full admin) | CRITICAL |
-| Terraform IAM policy with `Action: *` (all actions) | HIGH |
-| GCP `google_compute_firewall` allowing all inbound traffic (`0.0.0.0/0` with all ports) | CRITICAL |
-| GCP `google_compute_firewall` exposing sensitive port (SSH, DB, Docker daemon) to internet | HIGH |
-| GCP `google_compute_firewall` with any internet ingress (`0.0.0.0/0`) | MEDIUM |
-| GCP storage bucket granting `allUsers` or `allAuthenticatedUsers` | HIGH |
-| Azure network security rule allowing all inbound traffic (`*` with all ports) | CRITICAL |
-| Azure network security rule exposing sensitive port to internet | HIGH |
-| Azure network security rule with any internet ingress | MEDIUM |
-| Azure storage account with `allow_blob_public_access = true` | HIGH |
-| No `ai-stack-manifest.json` | LOW |
+44 deterministic rules across seven categories. Rule IDs are stable identifiers for `.tasiaignore` entries and severity overrides.
+
+### Compose (14 rules)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `exposed_inference` | Inference API (Ollama, vLLM, llama.cpp, LM Studio) published to all interfaces | HIGH |
+| `exposed_ui` | Chat UI (Open WebUI, Gradio) published to all interfaces | HIGH |
+| `exposed_vector` | Vector DB (Qdrant, Chroma, Weaviate, Milvus) published to host | HIGH |
+| `exposed_datastore` | Data store (Redis, Valkey, Postgres, pgvector) published to all interfaces | MEDIUM |
+| `exposed_agent_runtime` | Agent runtime (n8n, Flowise, Langflow, Dify, OpenHands) published to all interfaces | HIGH |
+| `docker_socket_mount` | Docker socket (`/var/run/docker.sock`) mounted into container | CRITICAL |
+| `privileged_container` | Container runs with `privileged: true` | CRITICAL |
+| `permissive_cors` | Permissive CORS such as `OLLAMA_ORIGINS=*` | HIGH |
+| `latest_image` | `image:` with `:latest` or no tag | MEDIUM |
+| `broad_bind_mount` | Broad writable bind mount such as `.:/app` (HIGH on agent runtimes) | MEDIUM |
+| `env_token_key` | Token/secret key name in `.env` or compose `environment:` (value never read) | MEDIUM |
+| `env_hardcoded_secret` | Value matches known secret pattern (`sk-`, `ghp_`, `AKIA`, JWT, hex/base64); value never emitted | HIGH |
+| `no_internal_network` | Multi-service stack publishing ports with no `internal: true` network | MEDIUM |
+| `vector_db_no_auth` | Chroma or Weaviate without authentication configuration | LOW |
+
+### Agent (4 rules)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `agent_auto_approve` | Auto-approve or code-execution settings (`N8N_ALLOW_EXEC`, `AUTO_APPROVE`, etc.) | HIGH |
+| `agent_shared_secret` | Same secret key used by multiple agent runtime services | HIGH |
+| `agent_test_mount` | Test/fixture directory (`test/`, `spec/`, `fixtures/`, etc.) mounted writable into agent | HIGH |
+| `agent_auto_restart` | Agent runtime with `restart: always` or `unless-stopped` | MEDIUM |
+
+### Dockerfile (3 rules)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `dockerfile_user_root` | `USER root` or `USER 0` (or no `USER` directive) | HIGH |
+| `dockerfile_expose` | `EXPOSE` directive (informational) | LOW |
+| `dockerfile_expose_sensitive` | `EXPOSE` of sensitive port (database, SSH, Docker daemon) | MEDIUM |
+
+### Reverse Proxy (1 rule)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `reverse_proxy_no_auth` | Caddyfile or nginx proxy with no `basic_auth`, `forward_auth` or `auth_request` | MEDIUM |
+
+### Kubernetes (6 rules)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `kube_exposed_service` | Service type LoadBalancer or NodePort | HIGH |
+| `kube_privileged` | Container with `privileged: true` | CRITICAL |
+| `kube_run_as_root` | Container running as root (`runAsUser: 0` or `runAsNonRoot: false`) | HIGH |
+| `kube_host_network` | Pod with `hostNetwork: true` | HIGH |
+| `kube_host_path` | hostPath volume mount (CRITICAL for sensitive paths like Docker socket) | HIGH |
+| `kube_no_network_policy` | Workloads without a NetworkPolicy | MEDIUM |
+
+### Helm (1 rule)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `helm_insecure_default` | `values.yaml` insecure defaults (privileged, hostNetwork, runAsUser 0, etc.) | HIGH |
+
+### Terraform (15 rules)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `tf_sg_ingress_all` | AWS security group allows all inbound (`0.0.0.0/0`, all ports) | CRITICAL |
+| `tf_sg_ingress_sensitive` | AWS security group exposes sensitive port to internet | HIGH |
+| `tf_sg_ingress_wide` | AWS security group allows internet ingress on non-sensitive port | MEDIUM |
+| `tf_s3_public_acl` | S3 bucket with `public-read` or `public-read-write` ACL | HIGH |
+| `tf_iam_admin_access` | IAM policy with `Action: *` and `Resource: *` | CRITICAL |
+| `tf_iam_star_actions` | IAM policy with `Action: *` | HIGH |
+| `tf_gcp_firewall_ingress_all` | GCP firewall allows all inbound (`0.0.0.0/0`, all ports) | CRITICAL |
+| `tf_gcp_firewall_ingress_sensitive` | GCP firewall exposes sensitive port to internet | HIGH |
+| `tf_gcp_firewall_ingress_wide` | GCP firewall allows internet ingress on non-sensitive port | MEDIUM |
+| `tf_gcp_storage_public` | GCP storage bucket grants `allUsers` or `allAuthenticatedUsers` | HIGH |
+| `tf_azure_nsg_ingress_all` | Azure NSG allows all inbound (`*`, all ports) | CRITICAL |
+| `tf_azure_nsg_ingress_sensitive` | Azure NSG exposes sensitive port to internet | HIGH |
+| `tf_azure_nsg_ingress_wide` | Azure NSG allows internet ingress on non-sensitive port | MEDIUM |
+| `tf_azure_storage_public` | Azure storage with `allow_blob_public_access = true` | HIGH |
+
+### Manifest (1 rule)
+
+| ID | Rule | Default |
+|----|------|---------|
+| `no_ai_stack_manifest` | No `ai-stack-manifest.json` found | LOW |
 
 Exact match rules, ports and image substrings are in [`docs/rules.md`](docs/rules.md). A port bound to `127.0.0.1`, `localhost` or `::1` is treated as safe.
 
