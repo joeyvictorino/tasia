@@ -96,6 +96,10 @@ func Run(args []string) error {
 		return runInventory(args[1:])
 	case "graph":
 		return runGraph(args[1:])
+	case "lint":
+		return runLint(args[1:])
+	case "doctor":
+		return runDoctor(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -151,6 +155,8 @@ Usage:
   tasia severity [--path .] [--format text|json] [--recursive] [--baseline FILE]
   tasia inventory [--path .] [--format text|json] [--recursive]
   tasia graph [--path .] [--format text|dot|mermaid] [--recursive]
+  tasia lint [--path .] [--format text|json]
+  tasia doctor [--path .] [--format text|json]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
