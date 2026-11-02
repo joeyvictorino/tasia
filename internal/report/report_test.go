@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,60 @@ func TestDecideAndPrint(t *testing.T) {
 	}
 	// print does not panic
 	PrintSummary(fs, d, r)
+}
+
+func TestPrintVerboseSummary(t *testing.T) {
+	fs := []rules.Finding{
+		{
+			ID:       "exposed_inference",
+			Severity: "HIGH",
+			Title:    "Inference API published to all interfaces",
+			File:     "docker-compose.yml",
+			Line:     5,
+			Evidence: "port=11434:11434",
+			Why:      "The inference API may be reachable from outside",
+			Fix:      "Bind to 127.0.0.1",
+		},
+		{
+			ID:       "latest_image",
+			Severity: "MEDIUM",
+			Title:    "Image uses latest tag",
+			File:     "docker-compose.yml",
+			Line:     3,
+			Evidence: "image=ollama/ollama:latest",
+			Why:      "Non-deterministic builds",
+			Fix:      "Pin to a specific digest or version tag",
+		},
+	}
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	PrintVerboseSummary(fs, "BLOCKED", "HIGH")
+
+	w.Close()
+	os.Stdout = old
+	b, _ := io.ReadAll(r)
+	output := string(b)
+
+	if !strings.Contains(output, "Evidence: port=11434:11434") {
+		t.Errorf("verbose output missing evidence: %s", output)
+	}
+	if !strings.Contains(output, "Why:") {
+		t.Errorf("verbose output missing why: %s", output)
+	}
+	if !strings.Contains(output, "Fix:") {
+		t.Errorf("verbose output missing fix: %s", output)
+	}
+	if !strings.Contains(output, "── HIGH ──") {
+		t.Errorf("verbose output missing severity header: %s", output)
+	}
+	if !strings.Contains(output, "── MEDIUM ──") {
+		t.Errorf("verbose output missing MEDIUM header: %s", output)
+	}
+	if !strings.Contains(output, "2 finding(s) require attention") {
+		t.Errorf("verbose output missing finding count: %s", output)
+	}
 }
 
 func TestManifestAndNoSecrets(t *testing.T) {

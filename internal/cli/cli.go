@@ -116,6 +116,7 @@ func runReview(args []string) error {
 	failOn := fs.String("fail-on", "", "fail level: critical, high, medium, low")
 	noWrite := fs.Bool("no-write", false, "do not write .tasia/ artifacts")
 	strict := fs.Bool("strict", false, "treat warnings as blocking too")
+	verbose := fs.Bool("verbose", false, "show why/fix/evidence details for each finding")
 	baselinePath := fs.String("baseline", "", "SARIF file of known findings to suppress")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -209,7 +210,11 @@ func runReview(args []string) error {
 			fmt.Fprintf(os.Stderr, "Wrote .tasia/ hardening pack to %s\n", wrotePath)
 		}
 	default:
-		report.PrintSummary(findings, decision, risk)
+		if *verbose {
+			report.PrintVerboseSummary(findings, decision, risk)
+		} else {
+			report.PrintSummary(findings, decision, risk)
+		}
 		if wrotePath != "" {
 			fmt.Printf("\nWrote .tasia/ hardening pack to %s\n", wrotePath)
 		}
@@ -229,6 +234,7 @@ func runCI(args []string) error {
 	path := fs.String("path", ".", "path to scan")
 	failOn := fs.String("fail-on", "high", "fail level: critical, high, medium, low")
 	baselinePath := fs.String("baseline", "", "SARIF file of known findings to suppress")
+	verbose := fs.Bool("verbose", false, "show why/fix/evidence details for each finding")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -274,7 +280,11 @@ func runCI(args []string) error {
 
 	decision, risk := report.Decide(findings, *failOn, false)
 
-	report.PrintSummary(findings, decision, risk)
+	if *verbose {
+		report.PrintVerboseSummary(findings, decision, risk)
+	} else {
+		report.PrintSummary(findings, decision, risk)
+	}
 
 	if decision == "BLOCKED" {
 		fmt.Fprintln(os.Stderr, report.ExitSummaryLine(findings, 1))
