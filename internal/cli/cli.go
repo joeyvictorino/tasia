@@ -322,6 +322,8 @@ func Run(args []string) error {
 		return runBlkio(args[1:])
 	case "bind-prop":
 		return runBindProp(args[1:])
+	case "net-analyze":
+		return runNetAnalyze(args[1:])
 	case "deploy-policy":
 		return runDeploypol(args[1:])
 	case "completions", "completion":
@@ -419,6 +421,7 @@ Usage:
   tasia compose-validate [--path .] [--format text|json] [--recursive]
   tasia port-conflict [--path .] [--format text|json] [--recursive]
   tasia volume-audit [--path .] [--format text|json] [--recursive]
+  tasia net-analyze [--path .] [--format text|json] [--recursive]
   tasia blkio [--path .] [--format text|json] [--recursive]
   tasia bind-prop [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
