@@ -168,7 +168,8 @@ func TestFindingsToSARIF(t *testing.T) {
 					Name    string `json:"name"`
 					Version string `json:"version"`
 					Rules   []struct {
-						ID string `json:"id"`
+						ID      string `json:"id"`
+						HelpURI string `json:"helpUri"`
 					} `json:"rules"`
 				} `json:"driver"`
 			} `json:"tool"`
@@ -210,6 +211,12 @@ func TestFindingsToSARIF(t *testing.T) {
 	// Two distinct rule IDs (exposed_inference deduped)
 	if len(run.Tool.Driver.Rules) != 2 {
 		t.Errorf("rules = %d, want 2", len(run.Tool.Driver.Rules))
+	}
+	for _, r := range run.Tool.Driver.Rules {
+		want := "https://github.com/joeyvictorino/tasia/blob/main/docs/rules.md#" + r.ID
+		if r.HelpURI != want {
+			t.Errorf("rule %s helpUri = %q, want %q", r.ID, r.HelpURI, want)
+		}
 	}
 	// Three results (one per finding)
 	if len(run.Results) != 3 {

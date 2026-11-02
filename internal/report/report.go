@@ -259,6 +259,7 @@ func FindingsToSARIF(findings []rules.Finding, version string) (string, error) {
 	type sarifRule struct {
 		ID               string         `json:"id"`
 		ShortDescription sarifShortDesc `json:"shortDescription"`
+		HelpURI          string         `json:"helpUri"`
 		Help             sarifHelp      `json:"help"`
 	}
 	type sarifDriver struct {
@@ -290,6 +291,7 @@ func FindingsToSARIF(findings []rules.Finding, version string) (string, error) {
 			ruleList = append(ruleList, sarifRule{
 				ID:               f.ID,
 				ShortDescription: sarifShortDesc{Text: f.Title},
+				HelpURI:          "https://github.com/joeyvictorino/tasia/blob/main/docs/rules.md#" + f.ID,
 				Help:             sarifHelp{Text: f.Why + "\n\nFix: " + f.Fix},
 			})
 		}
