@@ -134,6 +134,14 @@ func Run(args []string) error {
 		return runNetwork(args[1:])
 	case "secrets-scan":
 		return runSecretsScan(args[1:])
+	case "changelog":
+		return runChangelog(args[1:])
+	case "status":
+		return runStatus(args[1:])
+	case "sbom":
+		return runSBOM(args[1:])
+	case "risk-matrix":
+		return runRiskMatrix(args[1:])
 	case "snapshot":
 		return runSnapshot(args[1:])
 	case "drift":

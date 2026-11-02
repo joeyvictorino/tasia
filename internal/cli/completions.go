@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -79,6 +79,8 @@ _tasia() {
         'doctor:Check environment readiness'
         'compliance:Map findings to compliance frameworks'
         'coverage:Show rule coverage report'
+        'sbom:Generate software bill of materials'
+        'risk-matrix:Produce severity x likelihood risk matrix'
         'snapshot:Capture security state at a point in time'
         'drift:Compare two security snapshots'
         'policy:Generate security policy document from scan results'
@@ -204,6 +206,19 @@ _tasia() {
                         '--recursive[scan nested directories]'
                     ;;
                 coverage)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                sbom)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json spdx-lite)' \
+                        '--output[output file]:file:_files' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                risk-matrix)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
                         '--format[output format]:(text json)' \
@@ -342,8 +357,17 @@ complete -c tasia -n '__fish_seen_subcommand_from compliance' -l recursive -d 'S
 complete -c tasia -n '__fish_seen_subcommand_from coverage' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from coverage' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from coverage' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'sbom' -d 'Generate software bill of materials'
+complete -c tasia -n '__fish_use_subcommand' -a 'risk-matrix' -d 'Produce severity x likelihood risk matrix'
 complete -c tasia -n '__fish_use_subcommand' -a 'snapshot' -d 'Capture security state at a point in time'
 complete -c tasia -n '__fish_use_subcommand' -a 'drift' -d 'Compare two security snapshots'
+complete -c tasia -n '__fish_seen_subcommand_from sbom' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from sbom' -l format -d 'Output format' -r -a 'text json spdx-lite'
+complete -c tasia -n '__fish_seen_subcommand_from sbom' -l output -d 'Output file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from sbom' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from risk-matrix' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from risk-matrix' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from risk-matrix' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l output -d 'Output file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l recursive -d 'Scan nested directories'
