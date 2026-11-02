@@ -340,6 +340,8 @@ func Run(args []string) error {
 		return runTmpdir(args[1:])
 	case "credleak":
 		return runCredleak(args[1:])
+	case "logsecrets":
+		return runLogsecrets(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
