@@ -164,6 +164,8 @@ Usage:
   tasia lint [--path .] [--format text|json]
   tasia doctor [--path .] [--format text|json]
   tasia bench [--path .] [--iterations 5] [--format text|json]
+  tasia scan [--path .] [--files FILE,...] [--rules ID,...] [--format text|json] [--fail-on critical|high|medium|low]
+  tasia ignore [list|add|remove] [--path .] [--pattern PATTERN] [--format text|json]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
