@@ -90,5 +90,11 @@ func Catalog() []RuleInfo {
 		{ID: "tf_azure_nsg_ingress_sensitive", Default: SeverityHigh, Title: "Azure NSG exposes sensitive port to internet", Description: "Azure network security rule with internet source on SSH, database, or admin port", Category: "terraform"},
 		{ID: "tf_azure_nsg_ingress_wide", Default: SeverityMedium, Title: "Azure NSG allows internet ingress", Description: "Azure network security rule with internet source on a non-sensitive port", Category: "terraform"},
 		{ID: "tf_azure_storage_public", Default: SeverityHigh, Title: "Azure storage account allows public blob access", Description: "Azure storage account with allow_blob_public_access = true", Category: "terraform"},
+
+		// Terraform — Lambda / ECS
+		{ID: "tf_lambda_admin_role", Default: SeverityHigh, Title: "Lambda function with admin execution role", Description: "AWS Lambda function whose execution role grants AdministratorAccess", Category: "terraform"},
+		{ID: "tf_lambda_vpc_no_sg", Default: SeverityMedium, Title: "Lambda in VPC without security groups", Description: "AWS Lambda in a VPC with empty security_group_ids", Category: "terraform"},
+		{ID: "tf_ecs_privileged", Default: SeverityHigh, Title: "ECS task runs privileged container", Description: "ECS task definition with privileged: true in container_definitions", Category: "terraform"},
+		{ID: "tf_ecs_root", Default: SeverityMedium, Title: "ECS task runs container as root", Description: "ECS task definition with user root or 0 in container_definitions", Category: "terraform"},
 	}
 }

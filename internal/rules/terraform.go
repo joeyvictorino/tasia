@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,8 @@ func terraformFindings(files []collect.TerraformFile) []Finding {
 		out = append(out, gcpStorageFindings(tf)...)
 		out = append(out, azureNSGFindings(tf)...)
 		out = append(out, azureStorageFindings(tf)...)
+		out = append(out, lambdaFindings(tf)...)
+		out = append(out, ecsFindings(tf)...)
 	}
 	return out
 }
@@ -256,6 +259,106 @@ func azureStorageFindings(tf collect.TerraformFile) []Finding {
 				Why:      "Public blob access can expose sensitive data to the internet",
 				Fix:      "Set allow_blob_public_access = false",
 			})
+		}
+	}
+	return out
+}
+
+func lambdaFindings(tf collect.TerraformFile) []Finding {
+	var out []Finding
+	for _, lf := range tf.LambdaFunctions {
+		if lf.Role != "" && strings.Contains(lf.Role, "AdministratorAccess") {
+			out = append(out, Finding{
+				ID:       "tf_lambda_admin_role",
+				Severity: SeverityHigh,
+				Title:    "Lambda function with admin execution role",
+				File:     tf.Path,
+				Line:     lf.Line,
+				Evidence: fmt.Sprintf("role references AdministratorAccess on %s", lf.ResourceName),
+				Why:      "A Lambda with admin privileges can access or modify any resource in the account",
+				Fix:      "Create a least-privilege execution role scoped to only the APIs the function needs",
+			})
+		}
+		if lf.VPCConfig && len(lf.SecurityGroupIDs) == 0 {
+			out = append(out, Finding{
+				ID:       "tf_lambda_vpc_no_sg",
+				Severity: SeverityMedium,
+				Title:    "Lambda in VPC without security groups",
+				File:     tf.Path,
+				Line:     lf.Line,
+				Evidence: fmt.Sprintf("vpc_config with empty security_group_ids on %s", lf.ResourceName),
+				Why:      "A Lambda in a VPC with no security groups has unrestricted network access within the VPC",
+				Fix:      "Attach a security group that limits egress to required destinations",
+			})
+		}
+	}
+	return out
+}
+
+func ecsFindings(tf collect.TerraformFile) []Finding {
+	var out []Finding
+	for _, td := range tf.ECSTaskDefinitions {
+		cd := td.ContainerDefinitions
+		if cd == "" {
+			continue
+		}
+		var containers []map[string]any
+		if err := json.Unmarshal([]byte(cd), &containers); err != nil {
+			if strings.Contains(cd, `"privileged"`) && (strings.Contains(cd, `"privileged": true`) || strings.Contains(cd, `"privileged":true`)) {
+				out = append(out, Finding{
+					ID:       "tf_ecs_privileged",
+					Severity: SeverityHigh,
+					Title:    "ECS task runs privileged container",
+					File:     tf.Path,
+					Line:     td.Line,
+					Evidence: fmt.Sprintf("container_definitions contains privileged: true on %s", td.ResourceName),
+					Why:      "Privileged containers have full access to the host, breaking container isolation",
+					Fix:      "Remove privileged: true unless the task genuinely needs host device access",
+				})
+			}
+			if strings.Contains(cd, `"user"`) && (strings.Contains(cd, `"user": "root"`) || strings.Contains(cd, `"user":"root"`) || strings.Contains(cd, `"user": "0"`) || strings.Contains(cd, `"user":"0"`)) {
+				out = append(out, Finding{
+					ID:       "tf_ecs_root",
+					Severity: SeverityMedium,
+					Title:    "ECS task runs container as root",
+					File:     tf.Path,
+					Line:     td.Line,
+					Evidence: fmt.Sprintf("container_definitions contains user root/0 on %s", td.ResourceName),
+					Why:      "Running as root inside a container increases the impact of container escapes",
+					Fix:      "Set a non-root user in the container image or task definition",
+				})
+			}
+			continue
+		}
+		for _, c := range containers {
+			if priv, ok := c["privileged"]; ok {
+				if b, ok := priv.(bool); ok && b {
+					out = append(out, Finding{
+						ID:       "tf_ecs_privileged",
+						Severity: SeverityHigh,
+						Title:    "ECS task runs privileged container",
+						File:     tf.Path,
+						Line:     td.Line,
+						Evidence: fmt.Sprintf("container_definitions contains privileged: true on %s", td.ResourceName),
+						Why:      "Privileged containers have full access to the host, breaking container isolation",
+						Fix:      "Remove privileged: true unless the task genuinely needs host device access",
+					})
+				}
+			}
+			if user, ok := c["user"]; ok {
+				if u, ok := user.(string); ok && (u == "root" || u == "0") {
+					out = append(out, Finding{
+						ID:       "tf_ecs_root",
+						Severity: SeverityMedium,
+						Title:    "ECS task runs container as root",
+						File:     tf.Path,
+						Line:     td.Line,
+						Evidence: fmt.Sprintf("container_definitions has user=%q on %s", u, td.ResourceName),
+						Why:      "Running as root inside a container increases the impact of container escapes",
+						Fix:      "Set a non-root user in the container image or task definition",
+					})
+				}
+			}
 		}
 	}
 	return out

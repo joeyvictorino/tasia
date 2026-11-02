@@ -54,7 +54,7 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 
 ## What it checks
 
-44 deterministic rules across seven categories. Rule IDs are stable identifiers for `.tasiaignore` entries and severity overrides.
+48 deterministic rules across seven categories. Rule IDs are stable identifiers for `.tasiaignore` entries and severity overrides.
 
 ### Compose (14 rules)
 
@@ -115,7 +115,7 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 |----|------|---------|
 | `helm_insecure_default` | `values.yaml` insecure defaults (privileged, hostNetwork, runAsUser 0, etc.) | HIGH |
 
-### Terraform (15 rules)
+### Terraform (19 rules)
 
 | ID | Rule | Default |
 |----|------|---------|
@@ -125,6 +125,10 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 | `tf_s3_public_acl` | S3 bucket with `public-read` or `public-read-write` ACL | HIGH |
 | `tf_iam_admin_access` | IAM policy with `Action: *` and `Resource: *` | CRITICAL |
 | `tf_iam_star_actions` | IAM policy with `Action: *` | HIGH |
+| `tf_lambda_admin_role` | Lambda function with `AdministratorAccess` execution role | HIGH |
+| `tf_lambda_vpc_no_sg` | Lambda in VPC with empty `security_group_ids` | MEDIUM |
+| `tf_ecs_privileged` | ECS task definition with `privileged: true` container | HIGH |
+| `tf_ecs_root` | ECS task definition with `user: root` or `user: 0` | MEDIUM |
 | `tf_gcp_firewall_ingress_all` | GCP firewall allows all inbound (`0.0.0.0/0`, all ports) | CRITICAL |
 | `tf_gcp_firewall_ingress_sensitive` | GCP firewall exposes sensitive port to internet | HIGH |
 | `tf_gcp_firewall_ingress_wide` | GCP firewall allows internet ingress on non-sensitive port | MEDIUM |

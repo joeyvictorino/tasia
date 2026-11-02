@@ -13,8 +13,10 @@ type TerraformFile struct {
 	IAMPolicies    []TFIAMPolicy
 	GCPFirewalls   []TFGCPFirewall
 	GCPStorageACLs []TFGCPStorageACL
-	AzureNSGRules  []TFAzureNSGRule
+	AzureNSGRules        []TFAzureNSGRule
 	AzureStorageAccounts []TFAzureStorageAccount
+	LambdaFunctions      []TFLambdaFunction
+	ECSTaskDefinitions   []TFECSTaskDefinition
 }
 
 // TFSecurityGroup represents an AWS security group ingress/egress rule.
@@ -82,6 +84,22 @@ type TFAzureStorageAccount struct {
 	AllowBlobPublicAccess bool
 }
 
+// TFLambdaFunction represents an AWS Lambda function.
+type TFLambdaFunction struct {
+	ResourceName     string
+	Line             int
+	Role             string // role ARN reference
+	VPCConfig        bool
+	SecurityGroupIDs []string
+}
+
+// TFECSTaskDefinition represents an AWS ECS task definition.
+type TFECSTaskDefinition struct {
+	ResourceName         string
+	Line                 int
+	ContainerDefinitions string // raw JSON
+}
+
 var (
 	reResource     = regexp.MustCompile(`(?m)^resource\s+"(\w+)"\s+"(\w+)"\s*\{`)
 	reBlock        = regexp.MustCompile(`(?m)^\s+(ingress|egress)\s*\{`)
@@ -110,6 +128,13 @@ var (
 	reSourceAddressPrefix    = regexp.MustCompile(`(?m)source_address_prefix\s*=\s*"([^"]*)"`)
 	reDestinationPortRange   = regexp.MustCompile(`(?m)destination_port_range\s*=\s*"([^"]*)"`)
 	reAllowBlobPublicAccess  = regexp.MustCompile(`(?m)allow_blob_public_access\s*=\s*(true|false)`)
+
+	// Lambda / ECS
+	reRole                  = regexp.MustCompile(`(?m)role\s*=\s*(.+)`)
+	reVPCConfig             = regexp.MustCompile(`(?m)vpc_config\s*\{`)
+	reSecurityGroupIDs      = regexp.MustCompile(`(?m)security_group_ids\s*=\s*\[([^\]]*)\]`)
+	reContainerDefinitions  = regexp.MustCompile(`(?m)container_definitions\s*=\s*<<-?(\w+)`)
+	rePolicyARN             = regexp.MustCompile(`(?m)policy_arn\s*=\s*"([^"]*)"`)
 )
 
 // ParseTerraformFile extracts security-relevant resources from a .tf file.
@@ -149,6 +174,12 @@ func ParseTerraformFile(path, content string) TerraformFile {
 			tf.AzureNSGRules = append(tf.AzureNSGRules, parseAzureNSGRule(resName, line, block))
 		case "azurerm_storage_account":
 			tf.AzureStorageAccounts = append(tf.AzureStorageAccounts, parseAzureStorageAccount(resName, line, block))
+		case "aws_lambda_function":
+			tf.LambdaFunctions = append(tf.LambdaFunctions, parseLambdaFunction(resName, line, block))
+		case "aws_ecs_task_definition":
+			tf.ECSTaskDefinitions = append(tf.ECSTaskDefinitions, parseECSTaskDefinition(resName, line, block))
+		case "aws_iam_role_policy_attachment":
+			tf.IAMPolicies = append(tf.IAMPolicies, parseIAMRolePolicyAttachment(resName, line, block)...)
 		}
 	}
 
@@ -363,4 +394,67 @@ func extractQuotedStrings(s string) []string {
 		out = append(out, m[1])
 	}
 	return out
+}
+
+func parseLambdaFunction(name string, line int, block string) TFLambdaFunction {
+	lf := TFLambdaFunction{
+		ResourceName: name,
+		Line:         line,
+	}
+	if m := reRole.FindStringSubmatch(block); m != nil {
+		lf.Role = strings.TrimSpace(m[1])
+	}
+	if reVPCConfig.MatchString(block) {
+		lf.VPCConfig = true
+		vpcStart := reVPCConfig.FindStringIndex(block)
+		if vpcStart != nil {
+			sub := block[vpcStart[0]:]
+			cb := findClosingBrace(sub)
+			if cb > 0 {
+				sub = sub[:cb]
+			}
+			if m := reSecurityGroupIDs.FindStringSubmatch(sub); m != nil {
+				lf.SecurityGroupIDs = extractQuotedStrings(m[1])
+			}
+		}
+	}
+	return lf
+}
+
+func parseECSTaskDefinition(name string, line int, block string) TFECSTaskDefinition {
+	td := TFECSTaskDefinition{
+		ResourceName: name,
+		Line:         line,
+	}
+	if m := reContainerDefinitions.FindStringSubmatchIndex(block); m != nil {
+		heredocTag := block[m[2]:m[3]]
+		endTag := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(heredocTag) + `\s*$`)
+		rest := block[m[1]:]
+		if loc := endTag.FindStringIndex(rest); loc != nil {
+			td.ContainerDefinitions = rest[:loc[0]]
+		}
+	} else {
+		// Try jsonencode() or direct string assignment
+		re := regexp.MustCompile(`(?s)container_definitions\s*=\s*(.+)`)
+		if m := re.FindStringSubmatch(block); m != nil {
+			td.ContainerDefinitions = strings.TrimSpace(m[1])
+		}
+	}
+	return td
+}
+
+func parseIAMRolePolicyAttachment(name string, line int, block string) []TFIAMPolicy {
+	if m := rePolicyARN.FindStringSubmatch(block); m != nil {
+		arn := m[1]
+		if strings.Contains(arn, "AdministratorAccess") {
+			return []TFIAMPolicy{{
+				ResourceName: name,
+				Line:         line,
+				Effect:       "Allow",
+				Actions:      []string{"*"},
+				Resources:    []string{"*"},
+			}}
+		}
+	}
+	return nil
 }

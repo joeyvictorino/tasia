@@ -504,3 +504,220 @@ func TestAzureStoragePrivateClean(t *testing.T) {
 		t.Fatalf("private storage should not fire, got %d", len(findings))
 	}
 }
+
+// --- Lambda ---
+
+func TestLambdaAdminRole(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "lambda.tf",
+		LambdaFunctions: []collect.TFLambdaFunction{
+			{
+				ResourceName: "admin_fn",
+				Line:         5,
+				Role:         "aws_iam_role.AdministratorAccess_role.arn",
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_lambda_admin_role" {
+		t.Errorf("expected tf_lambda_admin_role, got %s", findings[0].ID)
+	}
+	if findings[0].Severity != SeverityHigh {
+		t.Errorf("expected HIGH, got %s", findings[0].Severity)
+	}
+}
+
+func TestLambdaAdminRoleClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "lambda.tf",
+		LambdaFunctions: []collect.TFLambdaFunction{
+			{
+				ResourceName: "normal_fn",
+				Line:         5,
+				Role:         "aws_iam_role.lambda_exec.arn",
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("normal role should not fire, got %d", len(findings))
+	}
+}
+
+func TestLambdaVPCNoSG(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "lambda.tf",
+		LambdaFunctions: []collect.TFLambdaFunction{
+			{
+				ResourceName:     "vpc_fn",
+				Line:             10,
+				Role:             "aws_iam_role.exec.arn",
+				VPCConfig:        true,
+				SecurityGroupIDs: []string{},
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_lambda_vpc_no_sg" {
+		t.Errorf("expected tf_lambda_vpc_no_sg, got %s", findings[0].ID)
+	}
+	if findings[0].Severity != SeverityMedium {
+		t.Errorf("expected MEDIUM, got %s", findings[0].Severity)
+	}
+}
+
+func TestLambdaVPCWithSGClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "lambda.tf",
+		LambdaFunctions: []collect.TFLambdaFunction{
+			{
+				ResourceName:     "secure_fn",
+				Line:             10,
+				VPCConfig:        true,
+				SecurityGroupIDs: []string{"sg-12345"},
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("Lambda with SGs should not fire, got %d", len(findings))
+	}
+}
+
+func TestLambdaNoVPCConfigClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "lambda.tf",
+		LambdaFunctions: []collect.TFLambdaFunction{
+			{
+				ResourceName: "simple_fn",
+				Line:         5,
+				VPCConfig:    false,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("Lambda without vpc_config should not fire vpc rule, got %d", len(findings))
+	}
+}
+
+// --- ECS ---
+
+func TestECSPrivileged(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "ecs.tf",
+		ECSTaskDefinitions: []collect.TFECSTaskDefinition{
+			{
+				ResourceName:         "priv_task",
+				Line:                 3,
+				ContainerDefinitions: `[{"name":"app","image":"nginx","privileged":true}]`,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	found := false
+	for _, f := range findings {
+		if f.ID == "tf_ecs_privileged" {
+			found = true
+			if f.Severity != SeverityHigh {
+				t.Errorf("expected HIGH, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected tf_ecs_privileged, got %v", findings)
+	}
+}
+
+func TestECSPrivilegedClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "ecs.tf",
+		ECSTaskDefinitions: []collect.TFECSTaskDefinition{
+			{
+				ResourceName:         "safe_task",
+				Line:                 3,
+				ContainerDefinitions: `[{"name":"app","image":"nginx"}]`,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	for _, f := range findings {
+		if f.ID == "tf_ecs_privileged" {
+			t.Fatalf("should not fire on non-privileged container")
+		}
+	}
+}
+
+func TestECSRoot(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "ecs.tf",
+		ECSTaskDefinitions: []collect.TFECSTaskDefinition{
+			{
+				ResourceName:         "root_task",
+				Line:                 5,
+				ContainerDefinitions: `[{"name":"app","image":"nginx","user":"root"}]`,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	found := false
+	for _, f := range findings {
+		if f.ID == "tf_ecs_root" {
+			found = true
+			if f.Severity != SeverityMedium {
+				t.Errorf("expected MEDIUM, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected tf_ecs_root, got %v", findings)
+	}
+}
+
+func TestECSRootNumeric(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "ecs.tf",
+		ECSTaskDefinitions: []collect.TFECSTaskDefinition{
+			{
+				ResourceName:         "root_task",
+				Line:                 5,
+				ContainerDefinitions: `[{"name":"app","image":"nginx","user":"0"}]`,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	found := false
+	for _, f := range findings {
+		if f.ID == "tf_ecs_root" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("user=0 should trigger tf_ecs_root")
+	}
+}
+
+func TestECSNonRootClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "ecs.tf",
+		ECSTaskDefinitions: []collect.TFECSTaskDefinition{
+			{
+				ResourceName:         "safe_task",
+				Line:                 5,
+				ContainerDefinitions: `[{"name":"app","image":"nginx","user":"appuser"}]`,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	for _, f := range findings {
+		if f.ID == "tf_ecs_root" {
+			t.Fatalf("non-root user should not fire")
+		}
+	}
+}
