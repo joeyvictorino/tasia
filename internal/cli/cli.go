@@ -156,6 +156,10 @@ func Run(args []string) error {
 		return runSnapshot(args[1:])
 	case "drift":
 		return runDrift(args[1:])
+	case "api":
+		return runAPI(args[1:])
+	case "config-check":
+		return runConfigCheck(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -225,6 +229,8 @@ Usage:
   tasia coverage [--path .] [--format text|json] [--recursive]
   tasia policy [--path .] [--format text|json|markdown] [--output FILE] [--title TEXT] [--recursive]
   tasia audit-trail [record|show|latest] [--path .] [--trail FILE] [--format text|json]
+  tasia api [--path .] [--port 8080] [--recursive] [--cors-origin *]
+  tasia config-check [--path .] [--format text|json] [--recursive] [--fail-on high|medium|low]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
