@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -106,6 +106,8 @@ _tasia() {
         'logging:Audit container logging driver configurations'
         'resource-limits:Audit CPU and memory resource limits'
         'tmpfs:Analyze tmpfs mount security'
+        'dns:Audit DNS configuration in compose services'
+        'labels:Audit container label security'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -403,6 +405,18 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
+                dns)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                labels)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
             esac
             ;;
     esac
@@ -603,6 +617,14 @@ complete -c tasia -n '__fish_use_subcommand' -a 'tmpfs' -d 'Analyze tmpfs mount 
 complete -c tasia -n '__fish_seen_subcommand_from tmpfs' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from tmpfs' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from tmpfs' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'dns' -d 'Audit DNS configuration in compose services'
+complete -c tasia -n '__fish_seen_subcommand_from dns' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from dns' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from dns' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'labels' -d 'Audit container label security'
+complete -c tasia -n '__fish_seen_subcommand_from labels' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from labels' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from labels' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_use_subcommand' -a 'api' -d 'Start REST API server for programmatic scanning'
 complete -c tasia -n '__fish_seen_subcommand_from api' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from api' -l port -d 'HTTP listen port' -r

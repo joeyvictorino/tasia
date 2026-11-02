@@ -180,6 +180,10 @@ func Run(args []string) error {
 		return runResourceLimits(args[1:])
 	case "tmpfs":
 		return runTmpfs(args[1:])
+	case "dns":
+		return runDns(args[1:])
+	case "labels":
+		return runLabels(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -261,6 +265,8 @@ Usage:
   tasia logging [--path .] [--format text|json] [--recursive]
   tasia resource-limits [--path .] [--format text|json] [--recursive]
   tasia tmpfs [--path .] [--format text|json] [--recursive]
+  tasia dns [--path .] [--format text|json] [--recursive]
+  tasia labels [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version

@@ -66,6 +66,14 @@ type Service struct {
 	// Tmpfs fields
 	Tmpfs     []string
 	TmpfsLine int
+	// DNS fields
+	DNS          []string
+	DNSLine      int
+	DNSSearch    []string
+	DNSSearchLine int
+	// Labels
+	Labels    map[string]string
+	LabelsLine int
 }
 
 // Healthcheck represents the healthcheck block in a compose service.
@@ -360,6 +368,49 @@ func Parse(path string) (*File, error) {
 					if resrvNode != nil && svc.MemReservation == "" {
 						if v := getScalar(resrvNode, "memory"); v != "" {
 							svc.MemReservation = v
+						}
+					}
+				}
+			}
+			// dns
+			dnsNode := getMapValue(svcNode, "dns")
+			if dnsNode != nil {
+				svc.DNSLine = dnsNode.Line
+				if dnsNode.Kind == yaml.SequenceNode {
+					for _, d := range dnsNode.Content {
+						svc.DNS = append(svc.DNS, d.Value)
+					}
+				} else {
+					svc.DNS = append(svc.DNS, dnsNode.Value)
+				}
+			}
+			// dns_search
+			dnsSearchNode := getMapValue(svcNode, "dns_search")
+			if dnsSearchNode != nil {
+				svc.DNSSearchLine = dnsSearchNode.Line
+				if dnsSearchNode.Kind == yaml.SequenceNode {
+					for _, d := range dnsSearchNode.Content {
+						svc.DNSSearch = append(svc.DNSSearch, d.Value)
+					}
+				} else {
+					svc.DNSSearch = append(svc.DNSSearch, dnsSearchNode.Value)
+				}
+			}
+			// labels
+			labelsNode := getMapValue(svcNode, "labels")
+			if labelsNode != nil {
+				svc.LabelsLine = labelsNode.Line
+				svc.Labels = map[string]string{}
+				if labelsNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(labelsNode.Content); j += 2 {
+						svc.Labels[labelsNode.Content[j].Value] = labelsNode.Content[j+1].Value
+					}
+				} else if labelsNode.Kind == yaml.SequenceNode {
+					for _, l := range labelsNode.Content {
+						if idx := strings.Index(l.Value, "="); idx > 0 {
+							svc.Labels[l.Value[:idx]] = l.Value[idx+1:]
+						} else {
+							svc.Labels[l.Value] = ""
 						}
 					}
 				}
