@@ -66,6 +66,7 @@ func Evaluate(c *collect.Collected) []Finding {
 	}
 
 	findings = append(findings, envFileFindings(c.EnvFiles)...)
+	findings = append(findings, dockerfileFindings(c.Dockerfiles)...)
 	findings = append(findings, missingManifestFinding(c)...)
 
 	return dedupeFindings(findings)
@@ -515,6 +516,87 @@ func envFileFindings(envFiles []collect.EnvFile) []Finding {
 		}
 	}
 	return out
+}
+
+// dockerfileFindings inspects collected Dockerfiles for USER root and EXPOSE
+// directives. A final USER root weakens container isolation; EXPOSE documents
+// intended ports but is informational. Sensitive ports (databases, SSH, Docker
+// daemon) get a separate finding.
+func dockerfileFindings(dockerfiles []collect.Dockerfile) []Finding {
+	var out []Finding
+	for _, df := range dockerfiles {
+		if df.User == "" && df.Content != "" && df.UserLine == 0 && len(df.Exposes) == 0 {
+			df = collect.ParseDockerfile(df.Path, df.Content)
+		}
+		if isRootUser(df.User) {
+			out = append(out, Finding{
+				ID:       "dockerfile_user_root",
+				Severity: SeverityHigh,
+				Title:    "Dockerfile runs as root",
+				File:     df.Path,
+				Line:     df.UserLine,
+				Evidence: fmt.Sprintf("USER %s", df.User),
+				Why:      "Running as root inside the container weakens isolation. A container escape or application vulnerability gives the attacker root on the host kernel namespace.",
+				Fix:      "Add a non-root USER directive at the end of the Dockerfile (e.g. USER appuser) and adjust file ownership.",
+			})
+		} else if df.User == "" && df.Content != "" {
+			out = append(out, Finding{
+				ID:       "dockerfile_user_root",
+				Severity: SeverityMedium,
+				Title:    "Dockerfile has no USER directive (defaults to root)",
+				File:     df.Path,
+				Line:     0,
+				Evidence: "no USER directive",
+				Why:      "Without a USER directive the container process runs as root by default. A container escape then gives full host privileges.",
+				Fix:      "Add USER <non-root-uid> near the end of the Dockerfile.",
+			})
+		}
+		for _, exp := range df.Exposes {
+			if hasSensitivePort(exp.Ports) {
+				out = append(out, Finding{
+					ID:       "dockerfile_expose_sensitive",
+					Severity: SeverityMedium,
+					Title:    fmt.Sprintf("Dockerfile exposes sensitive port: %s", exp.Ports),
+					File:     df.Path,
+					Line:     exp.Line,
+					Evidence: fmt.Sprintf("EXPOSE %s", exp.Ports),
+					Why:      "EXPOSE documents the container's intended ports. Sensitive service ports (databases, SSH, Docker daemon) should stay on internal networks.",
+					Fix:      "Remove the EXPOSE for internal-only ports; use Docker networks to restrict access.",
+				})
+			} else {
+				out = append(out, Finding{
+					ID:       "dockerfile_expose",
+					Severity: SeverityLow,
+					Title:    fmt.Sprintf("Dockerfile EXPOSE %s", exp.Ports),
+					File:     df.Path,
+					Line:     exp.Line,
+					Evidence: fmt.Sprintf("EXPOSE %s", exp.Ports),
+					Why:      "EXPOSE documents the container's intended ports. It does not publish them, but signals which ports the image expects to be reachable and may be automatically published by orchestrators.",
+					Fix:      "Verify that exposed ports are intentional and bind to 127.0.0.1 when publishing.",
+				})
+			}
+		}
+	}
+	return out
+}
+
+func isRootUser(user string) bool {
+	return strings.EqualFold(user, "root") || user == "0"
+}
+
+var sensitiveDockerfilePorts = map[int]bool{
+	22: true, 2375: true, 2376: true, 5432: true, 3306: true,
+	6379: true, 27017: true, 9200: true, 9300: true, 2049: true,
+}
+
+func hasSensitivePort(ports string) bool {
+	for _, token := range strings.Fields(ports) {
+		p := strings.Split(token, "/")[0]
+		if n, err := strconv.Atoi(p); err == nil && sensitiveDockerfilePorts[n] {
+			return true
+		}
+	}
+	return false
 }
 
 // missingManifestFinding notes an AI stack that lacks an inventory manifest.

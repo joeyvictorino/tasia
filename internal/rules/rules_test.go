@@ -724,6 +724,188 @@ func TestAgentAutoRestartDetected(t *testing.T) {
 	}
 }
 
+func TestDockerfileUserRootDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("Dockerfile", "FROM ubuntu:22.04\nRUN apt-get update\nUSER root\nCMD [\"bash\"]\n"),
+		},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "dockerfile_user_root" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 dockerfile_user_root finding, got %d", len(found))
+	}
+	if found[0].Severity != SeverityHigh {
+		t.Errorf("dockerfile_user_root (explicit) should be HIGH, got %s", found[0].Severity)
+	}
+	if found[0].Line != 3 {
+		t.Errorf("wrong line: got %d, want 3", found[0].Line)
+	}
+}
+
+func TestDockerfileUserZeroDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("Dockerfile", "FROM ubuntu:22.04\nUSER 0\nCMD [\"bash\"]\n"),
+		},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "dockerfile_user_root" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 dockerfile_user_root finding for USER 0, got %d", len(found))
+	}
+	if found[0].Severity != SeverityHigh {
+		t.Errorf("USER 0 should be HIGH, got %s", found[0].Severity)
+	}
+}
+
+func TestDockerfileNonRootUserNotFlagged(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("Dockerfile", "FROM ubuntu:22.04\nUSER root\nRUN apt-get update\nUSER appuser\nCMD [\"bash\"]\n"),
+		},
+	}
+	for _, f := range Evaluate(c) {
+		if f.ID == "dockerfile_user_root" {
+			t.Errorf("final USER appuser should not be flagged as root: %+v", f)
+		}
+	}
+}
+
+func TestDockerfileExposeSensitivePortDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("Dockerfile", "FROM postgres:16\nEXPOSE 5432\nEXPOSE 3000\nUSER postgres\nCMD [\"postgres\"]\n"),
+		},
+	}
+	var sensitive, nonsensitive []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "dockerfile_expose_sensitive" {
+			sensitive = append(sensitive, f)
+		}
+		if f.ID == "dockerfile_expose" {
+			nonsensitive = append(nonsensitive, f)
+		}
+	}
+	if len(sensitive) != 1 {
+		t.Fatalf("expected 1 dockerfile_expose_sensitive for 5432, got %d", len(sensitive))
+	}
+	if sensitive[0].Severity != SeverityMedium {
+		t.Errorf("dockerfile_expose_sensitive should be MEDIUM, got %s", sensitive[0].Severity)
+	}
+	if len(nonsensitive) != 1 {
+		t.Fatalf("expected 1 dockerfile_expose for 3000, got %d", len(nonsensitive))
+	}
+	if nonsensitive[0].Severity != SeverityLow {
+		t.Errorf("dockerfile_expose should be LOW, got %s", nonsensitive[0].Severity)
+	}
+}
+
+func TestDockerfileNoUserFlaggedAsMedium(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("Dockerfile", "FROM node:20\nRUN npm install\nCMD [\"node\", \"app.js\"]\n"),
+		},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "dockerfile_user_root" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 dockerfile_user_root for no USER, got %d", len(found))
+	}
+	if found[0].Severity != SeverityMedium {
+		t.Errorf("no-USER default-root should be MEDIUM, got %s", found[0].Severity)
+	}
+}
+
+func TestDockerfileUserRoot(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("agent/Dockerfile", "FROM python:3.12\nRUN pip install langchain\nUSER root\nCMD [\"python\", \"main.py\"]"),
+		},
+	}
+	fs := Evaluate(c)
+	found := false
+	for _, f := range fs {
+		if f.ID == "dockerfile_user_root" && f.Severity == SeverityHigh && f.Line == 3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected HIGH dockerfile_user_root finding for USER root at line 3")
+	}
+}
+
+func TestDockerfileNoUserDirective(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("api/Dockerfile", "FROM node:20\nRUN npm install\nCMD [\"node\", \"server.js\"]"),
+		},
+	}
+	fs := Evaluate(c)
+	found := false
+	for _, f := range fs {
+		if f.ID == "dockerfile_user_root" && f.Severity == SeverityMedium && strings.Contains(f.Evidence, "no USER") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected MEDIUM dockerfile_user_root for missing USER directive")
+	}
+}
+
+func TestDockerfileNonRootUser(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("worker/Dockerfile", "FROM python:3.12\nUSER 1000\nCMD [\"python\", \"run.py\"]"),
+		},
+	}
+	fs := Evaluate(c)
+	for _, f := range fs {
+		if f.ID == "dockerfile_user_root" {
+			t.Errorf("non-root USER should not trigger dockerfile_user_root, got %+v", f)
+		}
+	}
+}
+
+func TestDockerfileExpose(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		Dockerfiles: []collect.Dockerfile{
+			collect.ParseDockerfile("web/Dockerfile", "FROM nginx:latest\nEXPOSE 8080 443/tcp\nUSER nginx"),
+		},
+	}
+	fs := Evaluate(c)
+	exposeCount := 0
+	for _, f := range fs {
+		if f.ID == "dockerfile_expose" {
+			exposeCount++
+		}
+	}
+	if exposeCount != 1 {
+		t.Errorf("expected 1 EXPOSE finding (one directive), got %d", exposeCount)
+	}
+}
+
 func TestDatastoreEscalatesAlongsideAgentRuntime(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",

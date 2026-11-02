@@ -62,10 +62,42 @@ func (e EnvFile) KeyNames() []string {
 	return out
 }
 
-// Dockerfile basic.
+// Dockerfile holds a parsed Dockerfile with line-level information about
+// security-relevant directives.
 type Dockerfile struct {
 	Path    string
 	Content string
+	// User is the effective USER from the last USER directive, or "" if none.
+	User     string
+	UserLine int
+	// Exposes lists EXPOSE directives with their port strings and lines.
+	Exposes []DockerfileExpose
+}
+
+// DockerfileExpose records one EXPOSE directive.
+type DockerfileExpose struct {
+	Ports string // the raw port list, e.g. "8080 443/tcp"
+	Line  int
+}
+
+// ParseDockerfile extracts security-relevant directives from Dockerfile content.
+func ParseDockerfile(path, content string) Dockerfile {
+	df := Dockerfile{Path: path, Content: content}
+	for i, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		upper := strings.ToUpper(trimmed)
+		if strings.HasPrefix(upper, "USER ") {
+			df.User = strings.TrimSpace(trimmed[5:])
+			df.UserLine = i + 1
+		}
+		if strings.HasPrefix(upper, "EXPOSE ") {
+			df.Exposes = append(df.Exposes, DockerfileExpose{
+				Ports: strings.TrimSpace(trimmed[7:]),
+				Line:  i + 1,
+			})
+		}
+	}
+	return df
 }
 
 // WalkAndCollect walks the dir and extracts relevant data.
@@ -113,7 +145,7 @@ func WalkAndCollect(root string) (*Collected, error) {
 			c.SecretKeyNames = append(c.SecretKeyNames, ef.KeyNames()...)
 		case lower == "dockerfile":
 			content, _ := os.ReadFile(path)
-			c.Dockerfiles = append(c.Dockerfiles, Dockerfile{Path: rel, Content: string(content)})
+			c.Dockerfiles = append(c.Dockerfiles, ParseDockerfile(rel, string(content)))
 		case lower == "modelfile":
 			c.OtherConfigs = append(c.OtherConfigs, rel)
 		case lower == "ai-stack-manifest.json":

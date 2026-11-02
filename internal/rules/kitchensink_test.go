@@ -36,6 +36,7 @@ func TestKitchenSinkFixture(t *testing.T) {
 		"docker_socket_mount", "privileged_container", "permissive_cors",
 		"latest_image", "broad_bind_mount", "env_token_key",
 		"no_internal_network", "no_ai_stack_manifest", "exposed_agent_runtime",
+		"dockerfile_user_root", "dockerfile_expose",
 	}
 	for _, id := range want {
 		if !seen[id] {
