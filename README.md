@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest, Helm `values.yaml` and Terraform `.tf` files, applies 44 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
+Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest, Helm `values.yaml` and Terraform `.tf` files, applies 48 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes, Lambda/ECS container security, cloud firewall and storage misconfigurations and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -54,7 +54,7 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 
 ## What it checks
 
-48 deterministic rules across seven categories. Rule IDs are stable identifiers for `.tasiaignore` entries and severity overrides.
+48 deterministic rules across eight categories. Rule IDs are stable identifiers for `.tasiaignore` entries, inline suppression comments, and severity overrides.
 
 ### Compose (14 rules)
 
@@ -158,8 +158,8 @@ Agent runtimes get their own rule because they are not chat windows: they execut
 ## Commands
 
 ```
-tasia review --path .  [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict]
-tasia ci     --path .  [--fail-on critical|high|medium|low]     # default: high
+tasia review --path .  [--format text|json|sarif] [--fail-on critical|high|medium|low] [--baseline FILE] [--no-write] [--strict]
+tasia ci     --path .  [--fail-on critical|high|medium|low] [--baseline FILE]   # default: high
 tasia diff   --base DIR --current DIR [--format text|json] [--fail-on critical|high|medium|low]
 tasia install --pre-push          # git hook that runs: tasia ci --path . --fail-on high
 tasia uninstall --pre-push
@@ -174,6 +174,7 @@ tasia version
 - `schema` prints the JSON Schema that describes the `--format json` output (see [`docs/findings-schema.json`](docs/findings-schema.json)). Use it to validate output or generate types in other languages.
 - `ci` exits 0 (pass), 1 (blocked at or above `--fail-on`) or 2 (tool or config error).
 - Fails closed: a compose or env file that cannot be parsed gives `Decision: ERROR` and exit 2, never PASS. An unknown `--fail-on` value is also exit 2.
+- `--baseline FILE` on `review` or `ci` loads a previous SARIF output and suppresses any finding that already appears in it (matched by rule ID, file and line). Use it to gate on new findings only: run `tasia review --format sarif > baseline.sarif` once, then `tasia ci --baseline baseline.sarif` in CI.
 - `explain` sends only the redacted findings to a local Ollama (default `localhost:11434`) and writes `.tasia/LLM_REVIEW.md`. Without `--ollama` it only writes the redacted facts and sends nothing. `review` and `ci` never call a model.
 
 ## `.tasiaignore`
@@ -198,6 +199,21 @@ Rule IDs are the `id` values from `--format json` output (e.g. `exposed_inferenc
 
 The ignore policy applies to `review`, `ci` and `explain`. Suppressed findings are removed before the decision, so a BLOCKED stack can become PASS if the blocking findings are all suppressed.
 
+## Inline suppression
+
+For one-off exceptions, add a comment directly in the config file instead of a `.tasiaignore` entry:
+
+```yaml
+services:
+  ollama:
+    image: ollama/ollama  # tasia:disable=latest_image
+    ports:
+      # tasia:disable=exposed_inference
+      - "11434:11434"
+```
+
+Supported comment styles: `# tasia:disable=rule_id` (YAML, env, Dockerfile, Caddyfile) and `// tasia:disable=rule_id` (Terraform/HCL). Multiple rules: `# tasia:disable=rule_a,rule_b`. A directive suppresses the comment's own line and the line immediately below it, so the comment can sit above the flagged line. Inline suppressions combine with `.tasiaignore` — both are checked.
+
 ## `.tasiarc.yaml`
 
 Drop a `.tasiarc.yaml` (or `.tasiarc.yml`) at the root of the scanned directory to override default severities:
@@ -221,9 +237,9 @@ Severity overrides apply after `.tasiaignore` suppressions and before the decisi
 
 ```mermaid
 flowchart LR
-  F["compose, .env*, Dockerfile, Kube, Helm files"] --> C["collect: walk tree, parse YAML nodes, record env key names"]
+  F["compose, .env*, Dockerfile, Kube, Helm, Terraform files"] --> C["collect: walk tree, parse YAML/HCL nodes, record env key names"]
   C -- "unparseable file" --> X["Decision ERROR, exit 2"]
-  C --> R["rules: 29 deterministic checks"]
+  C --> R["rules: 48 deterministic checks"]
   R --> I["ignore: apply .tasiaignore suppressions"]
   I --> D["report: Decide PASS or BLOCKED"]
   D --> T["terminal summary or JSON"]
