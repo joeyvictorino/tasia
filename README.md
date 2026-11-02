@@ -103,6 +103,7 @@ tasia ci     --path .  [--fail-on critical|high|medium|low]     # default: high
 tasia install --pre-push          # git hook that runs: tasia ci --path . --fail-on high
 tasia uninstall --pre-push
 tasia explain [--path .] [--ollama MODEL] [--ollama-host HOST[:PORT]]
+tasia rules  [--format text|json]
 tasia version
 ```
 

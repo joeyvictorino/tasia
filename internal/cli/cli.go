@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -54,6 +55,8 @@ func Run(args []string) error {
 		return runUninstall(args[1:])
 	case "explain":
 		return runExplain(args[1:])
+	case "rules":
+		return runRules(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
@@ -88,6 +91,7 @@ Usage:
   tasia install --pre-push
   tasia uninstall --pre-push
   tasia explain [--path .] [--ollama llama3.1] [--ollama-host localhost:11434]
+  tasia rules [--format text|json]
   tasia version
   tasia help
 
@@ -434,4 +438,37 @@ func applySeverityOverrides(findings []rules.Finding, cfg *config.Config) []rule
 		}
 	}
 	return out
+}
+
+func runRules(args []string) error {
+	fs := flag.NewFlagSet("rules", flag.ContinueOnError)
+	format := fs.String("format", "text", "output format: text or json")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	catalog := rules.Catalog()
+
+	switch *format {
+	case "json":
+		data, err := json.MarshalIndent(catalog, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+	default:
+		lastCat := ""
+		for _, r := range catalog {
+			if r.Category != lastCat {
+				if lastCat != "" {
+					fmt.Println()
+				}
+				fmt.Printf("── %s ──\n", r.Category)
+				lastCat = r.Category
+			}
+			fmt.Printf("  %-10s %-30s %s\n", r.Default, r.ID, r.Title)
+		}
+		fmt.Printf("\n%d rules total\n", len(catalog))
+	}
+	return nil
 }
