@@ -324,6 +324,8 @@ func Run(args []string) error {
 		return runBindProp(args[1:])
 	case "net-analyze":
 		return runNetAnalyze(args[1:])
+	case "rate-limit":
+		return runRateLimit(args[1:])
 	case "deploy-policy":
 		return runDeploypol(args[1:])
 	case "completions", "completion":
@@ -422,6 +424,7 @@ Usage:
   tasia port-conflict [--path .] [--format text|json] [--recursive]
   tasia volume-audit [--path .] [--format text|json] [--recursive]
   tasia net-analyze [--path .] [--format text|json] [--recursive]
+  tasia rate-limit [--path .] [--format text|json] [--recursive]
   tasia blkio [--path .] [--format text|json] [--recursive]
   tasia bind-prop [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
