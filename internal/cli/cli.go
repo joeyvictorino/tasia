@@ -232,6 +232,8 @@ func Run(args []string) error {
 		return runPrivileged(args[1:])
 	case "workload":
 		return runWorkload(args[1:])
+	case "image-trust":
+		return runImageTrust(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -319,6 +321,7 @@ Usage:
   tasia init-process [--path .] [--format text|json] [--recursive]
   tasia privileged [--path .] [--format text|json] [--recursive]
   tasia workload [--path .] [--format text|json] [--recursive]
+  tasia image-trust [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
