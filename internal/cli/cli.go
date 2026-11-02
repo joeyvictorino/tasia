@@ -68,6 +68,8 @@ func Run(args []string) error {
 		return runSchema(args[1:])
 	case "init":
 		return runInit(args[1:])
+	case "watch":
+		return runWatch(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
@@ -105,6 +107,7 @@ Usage:
   tasia explain [--path .] [--ollama llama3.1] [--ollama-host localhost:11434]
   tasia rules [--format text|json]
   tasia init [--path .]
+  tasia watch [--path .] [--interval 2s] [--fail-on critical|high|medium|low]
   tasia schema
   tasia version
   tasia help
