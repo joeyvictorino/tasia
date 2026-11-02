@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -61,6 +62,7 @@ func Evaluate(c *collect.Collected) []Finding {
 			findings = append(findings, evaluateService(relPath, svc, stackHasAI)...)
 		}
 		findings = append(findings, networkSeparationFinding(cf, relPath)...)
+		findings = append(findings, agentSharedSecretFindings(cf, relPath)...)
 	}
 
 	findings = append(findings, envFileFindings(c.EnvFiles)...)
@@ -553,6 +555,54 @@ func networkSeparationFinding(cf compose.File, relCompose string) []Finding {
 		Why:      "Services share the default Docker bridge network and can reach each other freely; an internal network limits lateral movement.",
 		Fix:      "Define an internal network and attach AI services to it. Publish only the minimum gateway if needed.",
 	}}
+}
+
+// agentSharedSecretFindings flags compose files where two or more agent runtime
+// services share the same secret-looking environment variable key name. Shared
+// credentials mean compromise of one agent exposes all others that hold the
+// same key.
+func agentSharedSecretFindings(cf compose.File, relCompose string) []Finding {
+	type entry struct {
+		services []string
+		line     int
+	}
+	secrets := make(map[string]*entry)
+	for _, svc := range cf.Services {
+		if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+			continue
+		}
+		for _, env := range svc.Environment {
+			key, _, _ := strings.Cut(env, "=")
+			key = strings.TrimSpace(key)
+			if !collect.LooksLikeSecretKeyName(key) {
+				continue
+			}
+			e, exists := secrets[key]
+			if !exists {
+				e = &entry{line: svc.EnvLine}
+				secrets[key] = e
+			}
+			e.services = append(e.services, svc.Name)
+		}
+	}
+	var out []Finding
+	for key, e := range secrets {
+		if len(e.services) < 2 {
+			continue
+		}
+		out = append(out, Finding{
+			ID:       "agent_shared_secret",
+			Severity: SeverityHigh,
+			Title:    fmt.Sprintf("secret key %s shared across %d agent runtimes", key, len(e.services)),
+			File:     relCompose,
+			Line:     e.line,
+			Evidence: fmt.Sprintf("key=%s agents=%s", key, strings.Join(e.services, ",")),
+			Why:      "Multiple agent runtimes hold the same credential key. Compromise of one agent exposes every service the shared credential can reach.",
+			Fix:      "Issue per-agent credentials with least-privilege scopes. Rotate immediately if any agent was exposed.",
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Evidence < out[j].Evidence })
+	return out
 }
 
 // dedupeFindings removes findings that are identical in id, location, and

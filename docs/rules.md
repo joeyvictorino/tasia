@@ -39,7 +39,7 @@ host network is flagged accordingly.
 
 ## Rules implemented (v0.1)
 
-Thirteen rules. Two of them change severity with context: a data store is HIGH
+Fourteen rules. Two of them change severity with context: a data store is HIGH
 beside AI components, and a broad writable mount is HIGH on an agent runtime.
 
 
@@ -57,6 +57,7 @@ beside AI components, and a broad writable mount is HIGH on an agent runtime.
 | `broad_bind_mount` | MEDIUM / HIGH | A broad host bind mount (e.g. `.:/app`) that is not read-only. **HIGH** on an agent runtime: a writable mount of the project lets the agent edit the tests, check scripts and expected outputs that judge its own work, so a passing check proves nothing. |
 | `env_token_key` | MEDIUM | A token/secret/API/auth key **name** appears in a `.env*` file or a compose `environment:` block (values never inspected or emitted). Reports the real line number. |
 | `no_internal_network` | MEDIUM | A multi-service compose file publishes ports but defines no `internal: true` network. |
+| `agent_shared_secret` | HIGH | Two or more agent runtime services in the same compose file share a secret-looking environment variable key name. Compromise of one agent exposes every service the shared credential can reach. |
 | `no_ai_stack_manifest` | LOW | An AI compose stack has no `ai-stack-manifest.json`. |
 
 Volume rules understand both the short form (`/var/run/docker.sock:/var/run/docker.sock`)

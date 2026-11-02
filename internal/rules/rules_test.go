@@ -427,6 +427,45 @@ func TestBroadBindMountEscalatesOnAgentRuntime(t *testing.T) {
 	}
 }
 
+func TestAgentSharedSecrets(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "flowise", Image: "flowiseai/flowise:2.1", EnvLine: 3,
+					Environment: []string{"OPENAI_API_KEY=sk-xxx", "FLOWISE_SECRET=abc"}},
+				{Name: "n8n", Image: "n8nio/n8n:1.60", EnvLine: 8,
+					Environment: []string{"OPENAI_API_KEY=sk-xxx", "N8N_AUTH_TOKEN=tok"}},
+				{Name: "redis", Image: "redis:7", EnvLine: 12,
+					Environment: []string{"OPENAI_API_KEY=sk-xxx"}},
+			},
+		}},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "agent_shared_secret" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 agent_shared_secret finding (OPENAI_API_KEY), got %d: %+v", len(found), found)
+	}
+	if found[0].Severity != SeverityHigh {
+		t.Errorf("agent_shared_secret should be HIGH, got %s", found[0].Severity)
+	}
+	if !strings.Contains(found[0].Evidence, "OPENAI_API_KEY") {
+		t.Errorf("evidence should mention the shared key: %s", found[0].Evidence)
+	}
+	if !strings.Contains(found[0].Evidence, "flowise") || !strings.Contains(found[0].Evidence, "n8n") {
+		t.Errorf("evidence should list both agent services: %s", found[0].Evidence)
+	}
+	// redis is not an agent runtime, so it's excluded from the count
+	if strings.Contains(found[0].Evidence, "redis") {
+		t.Errorf("non-agent services should not appear in evidence: %s", found[0].Evidence)
+	}
+}
+
 func TestDatastoreEscalatesAlongsideAgentRuntime(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",
