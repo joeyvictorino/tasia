@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -124,6 +124,8 @@ _tasia() {
         'build-args:Audit build arguments and env secrets'
         'net-audit:Audit network configuration security'
         'init-process:Audit init process configuration'
+        'oom:Analyze OOM kill risk in container configurations'
+        'restart-policy:Audit restart policy security'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -433,7 +435,7 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
-                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process)
+                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
                         '--format[output format]:(text json)' \
@@ -721,6 +723,14 @@ complete -c tasia -n '__fish_use_subcommand' -a 'init-process' -d 'Audit init pr
 complete -c tasia -n '__fish_seen_subcommand_from init-process' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from init-process' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from init-process' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'oom' -d 'Analyze OOM kill risk in container configurations'
+complete -c tasia -n '__fish_seen_subcommand_from oom' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from oom' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from oom' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'restart-policy' -d 'Audit restart policy security'
+complete -c tasia -n '__fish_seen_subcommand_from restart-policy' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from restart-policy' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from restart-policy' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
