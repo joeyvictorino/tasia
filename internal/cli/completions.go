@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix install uninstall explain rules schema init watch profile completions version help"
+    commands="review diff check ci fix fmt migrate install uninstall explain rules schema init watch profile completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -65,6 +65,8 @@ _tasia() {
         'watch:Watch for config changes'
         'fix:Show auto-remediation suggestions'
         'profile:Aggregate security profile'
+        'fmt:Format and normalize .tasiarc.yaml'
+        'migrate:Upgrade config to latest schema'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -104,6 +106,17 @@ _tasia() {
                 rules)
                     _arguments '--format[output format]:(text json)'
                     ;;
+                fmt)
+                    _arguments \
+                        '--path[config file]:file:_files' \
+                        '--check[exit 1 if file would change]' \
+                        '--diff[show what would change]'
+                    ;;
+                migrate)
+                    _arguments \
+                        '--path[config file]:file:_files' \
+                        '--dry-run[show changes without writing]'
+                    ;;
             esac
             ;;
     esac
@@ -126,6 +139,8 @@ complete -c tasia -n '__fish_use_subcommand' -a 'schema' -d 'Print JSON Schema f
 complete -c tasia -n '__fish_use_subcommand' -a 'init' -d 'Generate starter config'
 complete -c tasia -n '__fish_use_subcommand' -a 'watch' -d 'Watch for config changes'
 complete -c tasia -n '__fish_use_subcommand' -a 'profile' -d 'Aggregate security profile'
+complete -c tasia -n '__fish_use_subcommand' -a 'fmt' -d 'Format and normalize .tasiarc.yaml'
+complete -c tasia -n '__fish_use_subcommand' -a 'migrate' -d 'Upgrade config to latest schema'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'
@@ -138,6 +153,11 @@ complete -c tasia -n '__fish_seen_subcommand_from review check' -l baseline -d '
 complete -c tasia -n '__fish_seen_subcommand_from review check ci' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from diff' -l base -d 'Base directory' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from diff' -l current -d 'Current directory' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from fmt' -l path -d 'Config file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from fmt' -l check -d 'Exit 1 if file would change'
+complete -c tasia -n '__fish_seen_subcommand_from fmt' -l diff -d 'Show what would change'
+complete -c tasia -n '__fish_seen_subcommand_from migrate' -l path -d 'Config file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from migrate' -l dry-run -d 'Show changes without writing'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
