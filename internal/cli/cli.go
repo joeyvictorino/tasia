@@ -362,6 +362,10 @@ func Run(args []string) error {
 		return runEnvfile(args[1:])
 	case "healthz":
 		return runHealthz(args[1:])
+	case "gpu-passthrough":
+		return runGpupass(args[1:])
+	case "compose-network":
+		return runComposenet(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
