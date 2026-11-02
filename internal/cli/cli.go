@@ -336,6 +336,8 @@ func Run(args []string) error {
 		return runPidsec(args[1:])
 	case "confinement":
 		return runConfinement(args[1:])
+	case "tmpdir":
+		return runTmpdir(args[1:])
 	case "credleak":
 		return runCredleak(args[1:])
 	case "completions", "completion":
