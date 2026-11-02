@@ -240,6 +240,8 @@ func Run(args []string) error {
 		return runComposeLint(args[1:])
 	case "service-map":
 		return runServiceMap(args[1:])
+	case "image-age":
+		return runImageAge(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -329,6 +331,7 @@ Usage:
   tasia workload [--path .] [--format text|json] [--recursive]
   tasia image-trust [--path .] [--format text|json] [--recursive]
   tasia service-map [--path .] [--format text|json|dot] [--recursive]
+  tasia image-age [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
