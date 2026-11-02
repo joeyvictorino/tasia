@@ -168,6 +168,10 @@ func Run(args []string) error {
 		return runCapabilities(args[1:])
 	case "entropy":
 		return runEntropy(args[1:])
+	case "isolation":
+		return runIsolation(args[1:])
+	case "volumes":
+		return runVolumes(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -243,6 +247,8 @@ Usage:
   tasia port-map [--path .] [--format text|json] [--recursive]
   tasia capabilities [--path .] [--format text|json] [--recursive]
   tasia entropy [--path .] [--format text|json] [--threshold 3.5] [--recursive]
+  tasia isolation [--path .] [--format text|json] [--recursive]
+  tasia volumes [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
