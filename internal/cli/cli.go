@@ -116,6 +116,7 @@ func runReview(args []string) error {
 	failOn := fs.String("fail-on", "", "fail level: critical, high, medium, low")
 	noWrite := fs.Bool("no-write", false, "do not write .tasia/ artifacts")
 	strict := fs.Bool("strict", false, "treat warnings as blocking too")
+	baselinePath := fs.String("baseline", "", "SARIF file of known findings to suppress")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -163,6 +164,15 @@ func runReview(args []string) error {
 	// Apply severity overrides from .tasiarc.yaml
 	if cfg, err := config.Load(absPath); err == nil {
 		findings = applySeverityOverrides(findings, cfg)
+	}
+
+	// Apply SARIF baseline filtering
+	if *baselinePath != "" {
+		baseline, err := report.LoadBaseline(*baselinePath)
+		if err != nil {
+			return fmt.Errorf("loading baseline: %w", err)
+		}
+		findings, _ = report.FilterBaseline(findings, baseline)
 	}
 
 	// Decide
@@ -218,6 +228,7 @@ func runCI(args []string) error {
 	fs := flag.NewFlagSet("ci", flag.ContinueOnError)
 	path := fs.String("path", ".", "path to scan")
 	failOn := fs.String("fail-on", "high", "fail level: critical, high, medium, low")
+	baselinePath := fs.String("baseline", "", "SARIF file of known findings to suppress")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -251,6 +262,14 @@ func runCI(args []string) error {
 
 	if cfg, err := config.Load(absPath); err == nil {
 		findings = applySeverityOverrides(findings, cfg)
+	}
+
+	if *baselinePath != "" {
+		bl, err := report.LoadBaseline(*baselinePath)
+		if err != nil {
+			return fmt.Errorf("loading baseline: %w", err)
+		}
+		findings, _ = report.FilterBaseline(findings, bl)
 	}
 
 	decision, risk := report.Decide(findings, *failOn, false)
