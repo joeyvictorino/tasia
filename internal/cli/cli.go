@@ -276,6 +276,10 @@ func Run(args []string) error {
 		return runAppArmor(args[1:])
 	case "selinux":
 		return runSELinux(args[1:])
+	case "proc-ns":
+		return runProcNS(args[1:])
+	case "readonly-root":
+		return runReadOnlyRoot(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
