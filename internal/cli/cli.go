@@ -126,6 +126,10 @@ func Run(args []string) error {
 		return runCompliance(args[1:])
 	case "coverage":
 		return runCoverage(args[1:])
+	case "snapshot":
+		return runSnapshot(args[1:])
+	case "drift":
+		return runDrift(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

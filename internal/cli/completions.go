@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -79,6 +79,8 @@ _tasia() {
         'doctor:Check environment readiness'
         'compliance:Map findings to compliance frameworks'
         'coverage:Show rule coverage report'
+        'snapshot:Capture security state at a point in time'
+        'drift:Compare two security snapshots'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -203,6 +205,18 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
+                snapshot)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--output[output file]:file:_files' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                drift)
+                    _arguments \
+                        '--base[base snapshot file]:file:_files' \
+                        '--current[current snapshot file]:file:_files' \
+                        '--format[output format]:(text json)'
+                    ;;
             esac
             ;;
     esac
@@ -294,6 +308,14 @@ complete -c tasia -n '__fish_seen_subcommand_from compliance' -l recursive -d 'S
 complete -c tasia -n '__fish_seen_subcommand_from coverage' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from coverage' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from coverage' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'snapshot' -d 'Capture security state at a point in time'
+complete -c tasia -n '__fish_use_subcommand' -a 'drift' -d 'Compare two security snapshots'
+complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l output -d 'Output file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from drift' -l base -d 'Base snapshot file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from drift' -l current -d 'Current snapshot file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from drift' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
