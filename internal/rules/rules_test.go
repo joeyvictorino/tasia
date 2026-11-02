@@ -522,6 +522,38 @@ func TestAgentAutoApproveNotFlaggedOnNonAgent(t *testing.T) {
 	}
 }
 
+func TestAgentAutoRestartDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "n8n", Image: "n8nio/n8n:1.60", Restart: "always", RestartLine: 5},
+				{Name: "flowise", Image: "flowiseai/flowise:2.1", Restart: "unless-stopped", RestartLine: 10},
+				// on-failure is safe
+				{Name: "langflow", Image: "langflowai/langflow:1.1", Restart: "on-failure", RestartLine: 15},
+				// non-agent: should NOT be flagged
+				{Name: "redis", Image: "redis:7", Restart: "always", RestartLine: 20},
+			},
+		}},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "agent_auto_restart" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 2 {
+		t.Fatalf("expected 2 agent_auto_restart findings (n8n + flowise), got %d: %+v", len(found), found)
+	}
+	if found[0].Severity != SeverityMedium || found[1].Severity != SeverityMedium {
+		t.Errorf("agent_auto_restart should be MEDIUM")
+	}
+	if found[0].Line != 5 || found[1].Line != 10 {
+		t.Errorf("wrong lines: %d, %d", found[0].Line, found[1].Line)
+	}
+}
+
 func TestDatastoreEscalatesAlongsideAgentRuntime(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",

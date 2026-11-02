@@ -100,6 +100,7 @@ func evaluateService(relCompose string, svc compose.Service, stackHasAI bool) []
 	out = append(out, broadBindMountFindings(svc, relCompose, isAgent)...)
 	out = append(out, environmentFindings(svc, relCompose)...)
 	out = append(out, agentAutoApproveFindings(svc, relCompose)...)
+	appendIf(agentAutoRestartFinding(svc, relCompose))
 
 	return out
 }
@@ -327,6 +328,29 @@ func agentAutoApproveFindings(svc compose.Service, relCompose string) []Finding 
 		})
 	}
 	return out
+}
+
+// agentAutoRestartFinding flags agent runtimes with restart: always or
+// unless-stopped. An agent that automatically restarts after a crash can retry
+// destructive actions in a loop without human intervention.
+func agentAutoRestartFinding(svc compose.Service, relCompose string) (Finding, bool) {
+	if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+		return Finding{}, false
+	}
+	r := strings.ToLower(svc.Restart)
+	if r != "always" && r != "unless-stopped" {
+		return Finding{}, false
+	}
+	return Finding{
+		ID:       "agent_auto_restart",
+		Severity: SeverityMedium,
+		Title:    fmt.Sprintf("agent runtime has restart: %s", svc.Restart),
+		File:     relCompose,
+		Line:     svc.RestartLine,
+		Evidence: fmt.Sprintf("service=%s restart=%s", svc.Name, svc.Restart),
+		Why:      "An agent runtime that restarts automatically after a crash can retry destructive model-written actions in a loop without human intervention.",
+		Fix:      "Use restart: on-failure with a max retry count, or restart: no, and monitor the service externally.",
+	}, true
 }
 
 // environmentFindings inspects compose environment entries for secret key names

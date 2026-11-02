@@ -31,9 +31,10 @@ type Service struct {
 	PrivLine        int
 	Environment     []string // "KEY=val" entries (from map or list form)
 	EnvLine         int      // line of the 'environment:' key if present
-	NetworkMode     string   // value of network_mode: (e.g. "host")
+	NetworkMode     string // value of network_mode: (e.g. "host")
 	NetworkModeLine int
-	// Raw for future
+	Restart         string // value of restart: (e.g. "always", "unless-stopped")
+	RestartLine     int
 }
 
 type PortMapping struct {
@@ -130,6 +131,12 @@ func Parse(path string) (*File, error) {
 			if nmNode != nil {
 				svc.NetworkMode = strings.Trim(nmNode.Value, `"' `)
 				svc.NetworkModeLine = nmNode.Line
+			}
+			// restart
+			restartNode := getMapValue(svcNode, "restart")
+			if restartNode != nil {
+				svc.Restart = strings.Trim(restartNode.Value, `"' `)
+				svc.RestartLine = restartNode.Line
 			}
 			// volumes for broad mounts / docker.sock — handle both short form
 			// ("host:container[:mode]") and long form (type/source/target maps).
