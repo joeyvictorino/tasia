@@ -376,6 +376,8 @@ Usage:
   tasia image-age [--path .] [--format text|json] [--recursive]
   tasia multi-stage [--path .] [--format text|json] [--recursive]
   tasia build-cache [--path .] [--format text|json] [--recursive]
+  tasia compose-validate [--path .] [--format text|json] [--recursive]
+  tasia port-conflict [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
