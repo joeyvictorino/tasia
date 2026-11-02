@@ -358,6 +358,10 @@ func Run(args []string) error {
 		return runBuildcache(args[1:])
 	case "layeraudit":
 		return runLayeraudit(args[1:])
+	case "envfile":
+		return runEnvfile(args[1:])
+	case "healthz":
+		return runHealthz(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
