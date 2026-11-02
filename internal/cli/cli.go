@@ -280,6 +280,10 @@ func Run(args []string) error {
 		return runProcNS(args[1:])
 	case "readonly-root":
 		return runReadOnlyRoot(args[1:])
+	case "compose-validate":
+		return runComposeValidate(args[1:])
+	case "port-conflict":
+		return runPortConflict(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
