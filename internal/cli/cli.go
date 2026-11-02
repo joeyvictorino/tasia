@@ -157,6 +157,7 @@ Usage:
   tasia graph [--path .] [--format text|dot|mermaid] [--recursive]
   tasia lint [--path .] [--format text|json]
   tasia doctor [--path .] [--format text|json]
+  tasia bench [--path .] [--iterations 5] [--format text|json]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
