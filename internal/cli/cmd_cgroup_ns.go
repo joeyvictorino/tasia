@@ -19,21 +19,17 @@ func runCgroupNS(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-
 	absPath, err := filepath.Abs(*path)
 	if err != nil {
 		return err
 	}
-
 	if *recursive {
 		return runCgroupNSRecursive(absPath, *format)
 	}
-
 	collected, err := collect.WalkAndCollect(absPath)
 	if err != nil {
 		return err
 	}
-
 	r := cgroupns.Analyze(collected)
 	return printCgroupNSResult(r, *format)
 }

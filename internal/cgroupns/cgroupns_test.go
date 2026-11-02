@@ -9,147 +9,233 @@ import (
 	"github.com/joeyvictorino/tasia/internal/collect/compose"
 )
 
-func collected(svcs ...compose.Service) *collect.Collected {
+func collected(services ...compose.Service) *collect.Collected {
 	return &collect.Collected{
-		ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}},
+		ComposeFiles: []compose.File{
+			{Path: "docker-compose.yml", Services: services},
+		},
 	}
 }
 
-func TestEmpty(t *testing.T) {
+func TestAnalyzeEmpty(t *testing.T) {
 	r := Analyze(&collect.Collected{})
-	if r.Summary.TotalServices != 0 {
-		t.Fatalf("expected 0 services, got %d", r.Summary.TotalServices)
-	}
-}
-
-func TestNoCgroupParent(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "web", MemLimit: "512m"}))
-	if r.Summary.TotalServices != 1 {
-		t.Fatalf("expected 1 service")
+	if len(r.Services) != 0 {
+		t.Fatalf("expected 0 services, got %d", len(r.Services))
 	}
 	if r.Summary.TotalFindings != 0 {
-		t.Fatalf("expected 0 findings for service with limits and no cgroup_parent, got %d", r.Summary.TotalFindings)
+		t.Fatalf("expected 0 findings, got %d", r.Summary.TotalFindings)
+	}
+}
+
+func TestHostCgroupNs(t *testing.T) {
+	c := collected(compose.Service{Name: "agent", CgroupNsMode: "host"})
+	r := Analyze(c)
+	if r.Summary.HostCgroupNs != 1 {
+		t.Errorf("expected 1 host cgroup ns, got %d", r.Summary.HostCgroupNs)
+	}
+	if r.Services[0].Findings[0].RuleID != "cgroupns_host_mode" {
+		t.Errorf("expected cgroupns_host_mode, got %s", r.Services[0].Findings[0].RuleID)
+	}
+	if r.Services[0].Findings[0].Severity != "critical" {
+		t.Errorf("expected critical, got %s", r.Services[0].Findings[0].Severity)
+	}
+}
+
+func TestHostCgroupNsCaseInsensitive(t *testing.T) {
+	c := collected(compose.Service{Name: "agent", CgroupNsMode: "Host"})
+	r := Analyze(c)
+	if r.Summary.HostCgroupNs != 1 {
+		t.Errorf("expected 1 host cgroup ns, got %d", r.Summary.HostCgroupNs)
+	}
+}
+
+func TestPrivateCgroupNsNoFinding(t *testing.T) {
+	c := collected(compose.Service{Name: "agent", CgroupNsMode: "private"})
+	r := Analyze(c)
+	if r.Summary.TotalFindings != 0 {
+		t.Errorf("expected 0 findings for private, got %d", r.Summary.TotalFindings)
 	}
 }
 
 func TestCustomCgroupParent(t *testing.T) {
-	r := Analyze(collected(compose.Service{
-		Name: "worker", CgroupParent: "mygroup", MemLimit: "256m",
-	}))
-	if r.Summary.CustomCgroupParent != 1 {
-		t.Fatalf("expected 1 custom cgroup parent, got %d", r.Summary.CustomCgroupParent)
+	c := collected(compose.Service{Name: "worker", CgroupParent: "/custom/agents"})
+	r := Analyze(c)
+	if r.Summary.CustomParent != 1 {
+		t.Errorf("expected 1 custom parent, got %d", r.Summary.CustomParent)
 	}
-	found := false
-	for _, s := range r.Services {
-		for _, f := range s.Findings {
-			if f.RuleID == "cgroupns_custom_parent" {
-				found = true
-			}
-		}
+	if r.Services[0].Findings[0].RuleID != "cgroupns_custom_parent" {
+		t.Errorf("expected cgroupns_custom_parent, got %s", r.Services[0].Findings[0].RuleID)
 	}
-	if !found {
-		t.Fatal("expected cgroupns_custom_parent finding")
+	if r.Services[0].Findings[0].Severity != "medium" {
+		t.Errorf("expected medium, got %s", r.Services[0].Findings[0].Severity)
 	}
 }
 
-func TestHostCgroup(t *testing.T) {
-	r := Analyze(collected(compose.Service{
-		Name: "agent", CgroupParent: "/", MemLimit: "1g",
-	}))
-	if r.Summary.HostCgroup != 1 {
-		t.Fatalf("expected 1 host cgroup, got %d", r.Summary.HostCgroup)
+func TestRootCgroupParentNoFinding(t *testing.T) {
+	c := collected(compose.Service{Name: "worker", CgroupParent: "/"})
+	r := Analyze(c)
+	if r.Summary.TotalFindings != 0 {
+		t.Errorf("expected 0 findings for root parent, got %d", r.Summary.TotalFindings)
 	}
 }
 
-func TestHostCgroupAbsolutePath(t *testing.T) {
-	r := Analyze(collected(compose.Service{
-		Name: "svc", CgroupParent: "/system.slice", MemLimit: "512m",
-	}))
-	if r.Summary.HostCgroup != 1 {
-		t.Fatalf("expected host cgroup finding for absolute path")
+func TestMissingPrivatePrivileged(t *testing.T) {
+	c := collected(compose.Service{Name: "admin", Privileged: true})
+	r := Analyze(c)
+	if r.Summary.MissingPrivate != 1 {
+		t.Errorf("expected 1 missing private, got %d", r.Summary.MissingPrivate)
+	}
+	if r.Services[0].Findings[0].RuleID != "cgroupns_missing_private" {
+		t.Errorf("expected cgroupns_missing_private, got %s", r.Services[0].Findings[0].RuleID)
+	}
+	if r.Services[0].Findings[0].Severity != "high" {
+		t.Errorf("expected high, got %s", r.Services[0].Findings[0].Severity)
 	}
 }
 
-func TestSharedCgroup(t *testing.T) {
-	r := Analyze(collected(
-		compose.Service{Name: "a", CgroupParent: "shared", MemLimit: "256m"},
-		compose.Service{Name: "b", CgroupParent: "shared", MemLimit: "256m"},
-	))
-	if r.Summary.SharedCgroup != 2 {
-		t.Fatalf("expected 2 shared cgroup findings, got %d", r.Summary.SharedCgroup)
+func TestMissingPrivateCapSysAdmin(t *testing.T) {
+	c := collected(compose.Service{Name: "admin", CapAdd: []string{"SYS_ADMIN"}})
+	r := Analyze(c)
+	if r.Summary.MissingPrivate != 1 {
+		t.Errorf("expected 1 missing private, got %d", r.Summary.MissingPrivate)
 	}
 }
 
-func TestNoLimits(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "bare"}))
-	if r.Summary.NoCgroupLimits != 1 {
-		t.Fatalf("expected 1 no-limits finding, got %d", r.Summary.NoCgroupLimits)
+func TestMissingPrivateCapAll(t *testing.T) {
+	c := collected(compose.Service{Name: "admin", CapAdd: []string{"ALL"}})
+	r := Analyze(c)
+	if r.Summary.MissingPrivate != 1 {
+		t.Errorf("expected 1 missing private, got %d", r.Summary.MissingPrivate)
 	}
 }
 
-func TestLimitsMemOnly(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "mem", MemLimit: "128m"}))
-	if r.Summary.NoCgroupLimits != 0 {
-		t.Fatalf("mem_limit should count as having limits")
+func TestMissingPrivateCapSysResource(t *testing.T) {
+	c := collected(compose.Service{Name: "admin", CapAdd: []string{"SYS_RESOURCE"}})
+	r := Analyze(c)
+	if r.Summary.MissingPrivate != 1 {
+		t.Errorf("expected 1 missing private, got %d", r.Summary.MissingPrivate)
 	}
 }
 
-func TestLimitsCPUOnly(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "cpu", CPUs: "0.5"}))
-	if r.Summary.NoCgroupLimits != 0 {
-		t.Fatalf("cpus should count as having limits")
+func TestNoFindingNonPrivilegedNoMode(t *testing.T) {
+	c := collected(compose.Service{Name: "app"})
+	r := Analyze(c)
+	if r.Summary.TotalFindings != 0 {
+		t.Errorf("expected 0 findings for normal service, got %d", r.Summary.TotalFindings)
 	}
 }
 
-func TestLimitsPidsOnly(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "pid", PidsLimit: 100}))
-	if r.Summary.NoCgroupLimits != 0 {
-		t.Fatalf("pids_limit should count as having limits")
+func TestPrivilegedWithPrivateNoMissingFinding(t *testing.T) {
+	c := collected(compose.Service{Name: "admin", Privileged: true, CgroupNsMode: "private"})
+	r := Analyze(c)
+	if r.Summary.MissingPrivate != 0 {
+		t.Errorf("expected 0 missing private (explicit private set), got %d", r.Summary.MissingPrivate)
 	}
 }
 
-func TestPrivilegedSkipsNoLimits(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "priv", Privileged: true}))
-	for _, s := range r.Services {
-		for _, f := range s.Findings {
-			if f.RuleID == "cgroupns_no_limits" {
-				t.Fatal("privileged services should not flag no-limits")
-			}
-		}
+func TestMultipleFindings(t *testing.T) {
+	c := collected(compose.Service{Name: "bad", CgroupNsMode: "host", CgroupParent: "/custom"})
+	r := Analyze(c)
+	if r.Summary.TotalFindings != 2 {
+		t.Errorf("expected 2 findings, got %d", r.Summary.TotalFindings)
+	}
+	if r.Summary.HostCgroupNs != 1 {
+		t.Errorf("expected 1 host, got %d", r.Summary.HostCgroupNs)
+	}
+	if r.Summary.CustomParent != 1 {
+		t.Errorf("expected 1 custom, got %d", r.Summary.CustomParent)
 	}
 }
 
-func TestFormatText(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "svc", CgroupParent: "/root"}))
+func TestMultipleServices(t *testing.T) {
+	c := collected(
+		compose.Service{Name: "a", CgroupNsMode: "host"},
+		compose.Service{Name: "b", CgroupNsMode: "private"},
+		compose.Service{Name: "c", Privileged: true},
+	)
+	r := Analyze(c)
+	if r.Summary.TotalServices != 3 {
+		t.Errorf("expected 3 services, got %d", r.Summary.TotalServices)
+	}
+	if r.Summary.HostCgroupNs != 1 {
+		t.Errorf("expected 1 host, got %d", r.Summary.HostCgroupNs)
+	}
+	if r.Summary.MissingPrivate != 1 {
+		t.Errorf("expected 1 missing private, got %d", r.Summary.MissingPrivate)
+	}
+}
+
+func TestServiceResultFields(t *testing.T) {
+	c := collected(compose.Service{Name: "svc", CgroupNsMode: "host", CgroupParent: "/my/cgroup"})
+	r := Analyze(c)
+	sr := r.Services[0]
+	if sr.CgroupNsMode != "host" {
+		t.Errorf("expected host, got %s", sr.CgroupNsMode)
+	}
+	if sr.CgroupParent != "/my/cgroup" {
+		t.Errorf("expected /my/cgroup, got %s", sr.CgroupParent)
+	}
+	if sr.File != "docker-compose.yml" {
+		t.Errorf("expected docker-compose.yml, got %s", sr.File)
+	}
+}
+
+func TestFormatTextOutput(t *testing.T) {
+	c := collected(compose.Service{Name: "agent", CgroupNsMode: "host"})
+	r := Analyze(c)
 	text := FormatText(r)
 	if !strings.Contains(text, "Cgroup Namespace Isolation Audit") {
-		t.Fatal("expected header in text output")
+		t.Error("missing header")
 	}
-	if !strings.Contains(text, "cgroupns_host_cgroup") {
-		t.Fatal("expected host cgroup rule in text")
+	if !strings.Contains(text, "agent") {
+		t.Error("missing service name")
+	}
+	if !strings.Contains(text, "cgroupns_host_mode") {
+		t.Error("missing rule ID")
+	}
+}
+
+func TestFormatTextEmpty(t *testing.T) {
+	r := Analyze(&collect.Collected{})
+	text := FormatText(r)
+	if !strings.Contains(text, "Total findings:     0") {
+		t.Error("expected 0 findings in output")
 	}
 }
 
 func TestFormatJSON(t *testing.T) {
-	r := Analyze(collected(compose.Service{Name: "x", CgroupParent: "grp", MemLimit: "1g"}))
-	var out Report
-	if err := json.Unmarshal([]byte(FormatJSON(r)), &out); err != nil {
+	c := collected(compose.Service{Name: "agent", CgroupNsMode: "host"})
+	r := Analyze(c)
+	out := FormatJSON(r)
+	var parsed Report
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if out.Summary.TotalServices != 1 {
-		t.Fatal("JSON round-trip failed")
+	if len(parsed.Services) != 1 {
+		t.Errorf("expected 1 service, got %d", len(parsed.Services))
 	}
 }
 
-func TestMultipleFiles(t *testing.T) {
-	c := &collect.Collected{
-		ComposeFiles: []compose.File{
-			{Path: "a.yml", Services: []compose.Service{{Name: "svc1", CgroupParent: "shared"}}},
-			{Path: "b.yml", Services: []compose.Service{{Name: "svc2", CgroupParent: "shared"}}},
-		},
+func TestIsPrivilegedOrElevated(t *testing.T) {
+	tests := []struct {
+		name string
+		svc  compose.Service
+		want bool
+	}{
+		{"plain", compose.Service{}, false},
+		{"privileged", compose.Service{Privileged: true}, true},
+		{"cap_all", compose.Service{CapAdd: []string{"ALL"}}, true},
+		{"cap_sys_admin", compose.Service{CapAdd: []string{"SYS_ADMIN"}}, true},
+		{"cap_sys_resource", compose.Service{CapAdd: []string{"SYS_RESOURCE"}}, true},
+		{"cap_net_admin", compose.Service{CapAdd: []string{"NET_ADMIN"}}, false},
+		{"cap_mixed", compose.Service{CapAdd: []string{"NET_ADMIN", "SYS_ADMIN"}}, true},
 	}
-	r := Analyze(c)
-	if r.Summary.TotalServices != 2 {
-		t.Fatalf("expected 2 services")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isPrivilegedOrElevated(&tt.svc)
+			if got != tt.want {
+				t.Errorf("isPrivilegedOrElevated(%s) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
 	}
 }

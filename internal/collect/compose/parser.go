@@ -117,6 +117,9 @@ type Service struct {
 	// Cgroup parent
 	CgroupParent     string
 	CgroupParentLine int
+	// Cgroup namespace mode
+	CgroupNsMode     string
+	CgroupNsModeLine int
 	// Runtime fields
 	StdinOpen         bool
 	StdinOpenLine     int
@@ -132,6 +135,13 @@ type Service struct {
 	ShmSizeLine       int
 	Runtime           string
 	RuntimeLine       int
+	// CPU pinning fields
+	CpusetCpus     string
+	CpusetCpusLine int
+	CpusetMems     string
+	CpusetMemsLine int
+	CpuShares      int
+	CpuSharesLine  int
 }
 
 // UlimitValue represents a ulimit with soft and hard limits.
@@ -294,6 +304,12 @@ func Parse(path string) (*File, error) {
 				svc.CgroupParent = strings.Trim(cgNode.Value, `"' `)
 				svc.CgroupParentLine = cgNode.Line
 			}
+			// cgroup (cgroup namespace mode)
+			cgNsNode := getMapValue(svcNode, "cgroup")
+			if cgNsNode != nil {
+				svc.CgroupNsMode = strings.Trim(cgNsNode.Value, `"' `)
+				svc.CgroupNsModeLine = cgNsNode.Line
+			}
 			// restart
 			restartNode := getMapValue(svcNode, "restart")
 			if restartNode != nil {
@@ -431,6 +447,29 @@ func Parse(path string) (*File, error) {
 			if cpuNode != nil {
 				svc.CPUs = cpuNode.Value
 				svc.CPUsLine = cpuNode.Line
+			}
+			// cpuset / cpuset_cpus / cpuset_mems / cpu_shares
+			csNode := getMapValue(svcNode, "cpuset")
+			if csNode != nil {
+				svc.CpusetCpus = strings.Trim(csNode.Value, `"' `)
+				svc.CpusetCpusLine = csNode.Line
+			}
+			csCpuNode := getMapValue(svcNode, "cpuset_cpus")
+			if csCpuNode != nil {
+				svc.CpusetCpus = strings.Trim(csCpuNode.Value, `"' `)
+				svc.CpusetCpusLine = csCpuNode.Line
+			}
+			csMemNode := getMapValue(svcNode, "cpuset_mems")
+			if csMemNode != nil {
+				svc.CpusetMems = strings.Trim(csMemNode.Value, `"' `)
+				svc.CpusetMemsLine = csMemNode.Line
+			}
+			cpuSharesNode := getMapValue(svcNode, "cpu_shares")
+			if cpuSharesNode != nil {
+				if n, ok := atoiSafe(cpuSharesNode.Value); ok {
+					svc.CpuShares = n
+				}
+				svc.CpuSharesLine = cpuSharesNode.Line
 			}
 			// pids_limit
 			pidsNode := getMapValue(svcNode, "pids_limit")
