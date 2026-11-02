@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -91,6 +91,8 @@ _tasia() {
         'status:Security posture dashboard with grade and metrics'
         'config-test:Validate configuration file against rule catalog'
         'env-audit:Audit environment variables across config files'
+        'hotspots:Find files with the most security findings'
+        'prioritize:Risk-based finding prioritization'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -263,6 +265,19 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--secrets-only[show only secret-looking variables]'
                     ;;
+                hotspots)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--top[number of hotspots to show]'
+                    ;;
+                prioritize)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--top[max findings to show]' \
+                        '--min-score[minimum risk score]'
+                    ;;
                 policy)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
@@ -416,6 +431,15 @@ complete -c tasia -n '__fish_seen_subcommand_from config-test' -l format -d 'Out
 complete -c tasia -n '__fish_seen_subcommand_from env-audit' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from env-audit' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from env-audit' -l secrets-only -d 'Show only secret-looking variables'
+complete -c tasia -n '__fish_use_subcommand' -a 'hotspots' -d 'Find files with the most findings'
+complete -c tasia -n '__fish_seen_subcommand_from hotspots' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from hotspots' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from hotspots' -l top -d 'Number of hotspots' -r
+complete -c tasia -n '__fish_use_subcommand' -a 'prioritize' -d 'Risk-based finding prioritization'
+complete -c tasia -n '__fish_seen_subcommand_from prioritize' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from prioritize' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from prioritize' -l top -d 'Max findings to show' -r
+complete -c tasia -n '__fish_seen_subcommand_from prioritize' -l min-score -d 'Minimum risk score' -r
 complete -c tasia -n '__fish_use_subcommand' -a 'policy' -d 'Generate security policy document'
 complete -c tasia -n '__fish_use_subcommand' -a 'audit-trail' -d 'Manage append-only scan history log'
 complete -c tasia -n '__fish_seen_subcommand_from policy' -l path -d 'Path to scan' -r -F

@@ -142,6 +142,10 @@ func Run(args []string) error {
 		return runConfigTest(args[1:])
 	case "env-audit":
 		return runEnvAudit(args[1:])
+	case "hotspots":
+		return runHotspots(args[1:])
+	case "prioritize":
+		return runPrioritize(args[1:])
 	case "sbom":
 		return runSBOM(args[1:])
 	case "risk-matrix":
