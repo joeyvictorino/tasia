@@ -74,6 +74,8 @@ func Run(args []string) error {
 		return runWatch(args[1:])
 	case "profile":
 		return runProfile(args[1:])
+	case "completions":
+		return runCompletions(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
@@ -114,6 +116,7 @@ Usage:
   tasia init [--path .]
   tasia watch [--path .] [--interval 2s] [--fail-on critical|high|medium|low]
   tasia profile [--path .] [--format text|json] [--recursive]
+  tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
   tasia help
