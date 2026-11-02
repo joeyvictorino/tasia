@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose and `.env*` files, applies 18 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
+Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*` and Dockerfile files, applies 21 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -73,6 +73,9 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 | Agent runtime with `restart: always` or `unless-stopped` (can retry destructive actions in a loop) | MEDIUM |
 | Chroma or Weaviate without authentication configuration | LOW |
 | Multi-service stack publishing ports with no `internal: true` network | MEDIUM |
+| Dockerfile `USER root` or `USER 0` (runs as root) | HIGH |
+| Dockerfile with no `USER` directive (defaults to root) | MEDIUM |
+| Dockerfile `EXPOSE` of a sensitive port (databases, SSH, Docker daemon) | MEDIUM |
 | No `ai-stack-manifest.json` | LOW |
 
 Exact match rules, ports and image substrings are in [`docs/rules.md`](docs/rules.md). A port bound to `127.0.0.1`, `localhost` or `::1` is treated as safe.
@@ -82,7 +85,7 @@ Agent runtimes get their own rule because they are not chat windows: they execut
 ## What it does not do
 
 - It does not scan networks or running containers; it only reads files.
-- It does not analyze Dockerfiles yet. They are collected, but no rule uses them. Dockerfile `USER` and `EXPOSE` checks, Kubernetes manifests, and Caddy and nginx checks are on the [roadmap](docs/roadmap.md), not implemented.
+- Kubernetes manifests and Caddy/nginx auth checks are on the [roadmap](docs/roadmap.md), not implemented.
 - It does not edit your files, read secret values into findings, call the internet or collect telemetry. The only optional network call is `tasia explain` to a local Ollama you run.
 - It does not prove security or compliance. A PASS means no rule matched.
 - The generated `docker-compose.hardened.override.yml` is a suggestion, not a drop-in file. Compose appends `ports` lists when merging files, so apply the changes to your base file (or use the `!override` tag) and check with `docker compose config`. The file says this in its header.

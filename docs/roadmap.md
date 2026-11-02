@@ -24,7 +24,7 @@
   (done: `agent_auto_approve`, `agent_test_mount`, `agent_auto_restart`)
 - Caddyfile / nginx auth checks
 - ~~Chroma / Weaviate auth hints~~ (done: `vector_db_no_auth`)
-- Dockerfile `USER root` / `EXPOSE` analysis
+- ~~Dockerfile `USER root` / `EXPOSE` analysis~~ (done: `dockerfile_user_root`, `dockerfile_expose`, `dockerfile_expose_sensitive`)
 
 ## v0.3
 
