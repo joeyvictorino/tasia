@@ -300,6 +300,10 @@ func Run(args []string) error {
 		return runCgroupNS(args[1:])
 	case "mnt-ns":
 		return runMntNS(args[1:])
+	case "log-driver":
+		return runLogDriver(args[1:])
+	case "cpu-pin":
+		return runCpuPin(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
