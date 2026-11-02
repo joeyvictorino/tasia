@@ -37,6 +37,7 @@ type Collected struct {
 	PublishedPorts        []int
 	SecretKeyNames        []string
 	HasManifest           bool
+	HasNetworkPolicy      bool
 	ParseErrors           []ConfigError
 }
 
@@ -313,6 +314,11 @@ func WalkAndCollect(root string) (*Collected, error) {
 				} else if IsKubeFile(lower, s) {
 					manifests, _ := ParseKubeYAML(rel, s)
 					c.KubeManifests = append(c.KubeManifests, manifests...)
+					for _, m := range manifests {
+						if m.Kind == "NetworkPolicy" {
+							c.HasNetworkPolicy = true
+						}
+					}
 				}
 			}
 		}
