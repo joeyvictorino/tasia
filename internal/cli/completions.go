@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -93,6 +93,7 @@ _tasia() {
         'env-audit:Audit environment variables across config files'
         'hotspots:Find files with the most security findings'
         'prioritize:Risk-based finding prioritization'
+        'benchmark-rules:Per-category rule performance profiler'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -241,6 +242,13 @@ _tasia() {
                         '--base[base snapshot file]:file:_files' \
                         '--current[current snapshot file]:file:_files' \
                         '--format[output format]:(text json)'
+                    ;;
+                benchmark-rules)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--iterations[number of iterations]' \
+                        '--recursive[scan nested directories]'
                     ;;
                 changelog)
                     _arguments \
@@ -416,6 +424,11 @@ complete -c tasia -n '__fish_seen_subcommand_from snapshot' -l recursive -d 'Sca
 complete -c tasia -n '__fish_seen_subcommand_from drift' -l base -d 'Base snapshot file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from drift' -l current -d 'Current snapshot file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from drift' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_use_subcommand' -a 'benchmark-rules' -d 'Per-category rule performance profiler'
+complete -c tasia -n '__fish_seen_subcommand_from benchmark-rules' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from benchmark-rules' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from benchmark-rules' -l iterations -d 'Number of iterations' -r
+complete -c tasia -n '__fish_seen_subcommand_from benchmark-rules' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_use_subcommand' -a 'changelog' -d 'Auto-generate security changelog'
 complete -c tasia -n '__fish_use_subcommand' -a 'status' -d 'Security posture dashboard'
 complete -c tasia -n '__fish_seen_subcommand_from changelog' -l trail -d 'Audit trail file' -r -F

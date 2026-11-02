@@ -150,6 +150,8 @@ func Run(args []string) error {
 		return runSBOM(args[1:])
 	case "risk-matrix":
 		return runRiskMatrix(args[1:])
+	case "benchmark-rules":
+		return runBenchmarkRules(args[1:])
 	case "snapshot":
 		return runSnapshot(args[1:])
 	case "drift":
@@ -212,6 +214,7 @@ Usage:
   tasia lint [--path .] [--format text|json]
   tasia doctor [--path .] [--format text|json]
   tasia bench [--path .] [--iterations 5] [--format text|json]
+  tasia benchmark-rules [--path .] [--iterations 3] [--format text|json] [--recursive]
   tasia scan [--path .] [--files FILE,...] [--rules ID,...] [--format text|json] [--fail-on critical|high|medium|low]
   tasia ignore [list|add|remove] [--path .] [--pattern PATTERN] [--format text|json]
   tasia suggest [--path .] [--severity LEVEL] [--format text|json]
