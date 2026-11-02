@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -120,6 +120,8 @@ _tasia() {
         'runtime:Audit container runtime security'
         'depends:Analyze service dependency chains'
         'entrypoint:Audit entrypoint and command security'
+        'env-isolation:Analyze environment variable isolation'
+        'build-args:Audit build arguments and env secrets'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -701,6 +703,14 @@ complete -c tasia -n '__fish_use_subcommand' -a 'entrypoint' -d 'Audit entrypoin
 complete -c tasia -n '__fish_seen_subcommand_from entrypoint' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from entrypoint' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from entrypoint' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'env-isolation' -d 'Analyze environment variable isolation'
+complete -c tasia -n '__fish_seen_subcommand_from env-isolation' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from env-isolation' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from env-isolation' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'build-args' -d 'Audit build arguments and env secrets'
+complete -c tasia -n '__fish_seen_subcommand_from build-args' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from build-args' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from build-args' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 

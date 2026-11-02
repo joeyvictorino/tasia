@@ -208,6 +208,10 @@ func Run(args []string) error {
 		return runDepends(args[1:])
 	case "entrypoint":
 		return runEntrypoint(args[1:])
+	case "env-isolation":
+		return runEnvIsolation(args[1:])
+	case "build-args":
+		return runBuildArgs(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
