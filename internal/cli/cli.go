@@ -288,6 +288,10 @@ func Run(args []string) error {
 		return runVolumeAudit(args[1:])
 	case "env-scan":
 		return runEnvScan(args[1:])
+	case "uts-ns":
+		return runUtsNS(args[1:])
+	case "cgroupv2":
+		return runCgroupV2(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

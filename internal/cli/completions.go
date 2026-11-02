@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint layer-trust service-map image-age layer-audit multi-stage build-cache readonly-fs env-leak registry sidecar egress apparmor selinux proc-ns readonly-root compose-validate port-conflict volume-audit completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint layer-trust service-map image-age layer-audit multi-stage build-cache readonly-fs env-leak registry sidecar egress apparmor selinux proc-ns readonly-root compose-validate port-conflict volume-audit uts-ns cgroupv2 completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -149,6 +149,8 @@ _tasia() {
         'compose-validate:Compose schema validation and best-practice checks'
         'port-conflict:Port collision detection across compose services'
         'volume-audit:Cross-service volume sharing and overlap analysis'
+        'uts-ns:UTS namespace and hostname isolation audit'
+        'cgroupv2:Cgroup v2 migration readiness checker'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -458,7 +460,7 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
-                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|layer-trust|service-map|image-age|layer-audit|multi-stage|build-cache|readonly-fs|env-leak|proc-ns|readonly-root|compose-validate|port-conflict|volume-audit)
+                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|layer-trust|service-map|image-age|layer-audit|multi-stage|build-cache|readonly-fs|env-leak|proc-ns|readonly-root|compose-validate|port-conflict|volume-audit|uts-ns|cgroupv2)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
                         '--format[output format]:(text json)' \
@@ -832,6 +834,14 @@ complete -c tasia -n '__fish_use_subcommand' -a 'volume-audit' -d 'Cross-service
 complete -c tasia -n '__fish_seen_subcommand_from volume-audit' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from volume-audit' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from volume-audit' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'uts-ns' -d 'UTS namespace and hostname isolation audit'
+complete -c tasia -n '__fish_seen_subcommand_from uts-ns' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from uts-ns' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from uts-ns' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'cgroupv2' -d 'Cgroup v2 migration readiness checker'
+complete -c tasia -n '__fish_seen_subcommand_from cgroupv2' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from cgroupv2' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from cgroupv2' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 

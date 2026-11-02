@@ -111,6 +111,12 @@ type Service struct {
 	// Deploy restart policy
 	DeployRestartPolicy *DeployRestartPolicy
 	DeployRestartLine   int
+	// UTS namespace mode
+	UtsMode     string
+	UtsModeLine int
+	// Cgroup parent
+	CgroupParent     string
+	CgroupParentLine int
 	// Runtime fields
 	StdinOpen         bool
 	StdinOpenLine     int
@@ -275,6 +281,18 @@ func Parse(path string) (*File, error) {
 			if ipcNode != nil {
 				svc.IpcMode = strings.Trim(ipcNode.Value, `"' `)
 				svc.IpcModeLine = ipcNode.Line
+			}
+			// uts
+			utsNode := getMapValue(svcNode, "uts")
+			if utsNode != nil {
+				svc.UtsMode = strings.Trim(utsNode.Value, `"' `)
+				svc.UtsModeLine = utsNode.Line
+			}
+			// cgroup_parent
+			cgNode := getMapValue(svcNode, "cgroup_parent")
+			if cgNode != nil {
+				svc.CgroupParent = strings.Trim(cgNode.Value, `"' `)
+				svc.CgroupParentLine = cgNode.Line
 			}
 			// restart
 			restartNode := getMapValue(svcNode, "restart")
