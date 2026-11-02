@@ -240,6 +240,10 @@ func Run(args []string) error {
 		return runLayerTrust(args[1:])
 	case "compose-lint":
 		return runComposeLint(args[1:])
+	case "registry":
+		return runRegistry(args[1:])
+	case "sidecar":
+		return runSidecar(args[1:])
 	case "service-map":
 		return runServiceMap(args[1:])
 	case "image-age":
@@ -250,6 +254,10 @@ func Run(args []string) error {
 		return runMultistage(args[1:])
 	case "build-cache":
 		return runBuildCache(args[1:])
+	case "readonly-fs":
+		return runReadonlyFS(args[1:])
+	case "env-leak":
+		return runEnvLeak(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

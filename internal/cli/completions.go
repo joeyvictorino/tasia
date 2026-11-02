@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint layer-trust service-map image-age layer-audit multi-stage build-cache completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint layer-trust service-map image-age layer-audit multi-stage build-cache readonly-fs env-leak completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -140,6 +140,8 @@ _tasia() {
         'layer-audit:Dockerfile layer hygiene and optimization audit'
         'multi-stage:Multi-stage Dockerfile build security analysis'
         'build-cache:Build cache mount security audit'
+        'readonly-fs:Read-only filesystem analysis for compose services'
+        'env-leak:Environment variable leak path detection'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -449,7 +451,7 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
-                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|layer-trust|service-map|image-age|layer-audit|multi-stage|build-cache)
+                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|layer-trust|service-map|image-age|layer-audit|multi-stage|build-cache|readonly-fs|env-leak)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
                         '--format[output format]:(text json)' \
@@ -509,6 +511,14 @@ complete -c tasia -n '__fish_seen_subcommand_from layer-audit' -l recursive -d '
 complete -c tasia -n '__fish_seen_subcommand_from service-map' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from service-map' -l format -d 'Output format' -r -a 'text json dot'
 complete -c tasia -n '__fish_seen_subcommand_from service-map' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'readonly-fs' -d 'Read-only filesystem analysis for compose services'
+complete -c tasia -n '__fish_seen_subcommand_from readonly-fs' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from readonly-fs' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from readonly-fs' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'env-leak' -d 'Environment variable leak path detection'
+complete -c tasia -n '__fish_seen_subcommand_from env-leak' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from env-leak' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from env-leak' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'
