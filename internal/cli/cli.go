@@ -66,6 +66,8 @@ func Run(args []string) error {
 		return runRules(args[1:])
 	case "schema":
 		return runSchema(args[1:])
+	case "init":
+		return runInit(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
@@ -102,6 +104,7 @@ Usage:
   tasia uninstall --pre-push
   tasia explain [--path .] [--ollama llama3.1] [--ollama-host localhost:11434]
   tasia rules [--format text|json]
+  tasia init [--path .]
   tasia schema
   tasia version
   tasia help
@@ -598,6 +601,78 @@ func scanDir(path string) []rules.Finding {
 		findings = applySeverityOverrides(findings, cfg)
 	}
 	return findings
+}
+
+func runInit(args []string) error {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	path := fs.String("path", ".", "directory to initialise")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	absPath, err := filepath.Abs(*path)
+	if err != nil {
+		return err
+	}
+
+	rcPath := filepath.Join(absPath, ".tasiarc.yaml")
+	if _, err := os.Stat(rcPath); err == nil {
+		return fmt.Errorf("%s already exists; remove it first to reinitialise", rcPath)
+	}
+
+	ignorePath := filepath.Join(absPath, ".tasiaignore")
+	if _, err := os.Stat(ignorePath); err == nil {
+		return fmt.Errorf("%s already exists; remove it first to reinitialise", ignorePath)
+	}
+
+	rcContent := generateConfig()
+	if err := os.WriteFile(rcPath, []byte(rcContent), 0o644); err != nil {
+		return err
+	}
+
+	ignoreContent := generateIgnore()
+	if err := os.WriteFile(ignorePath, []byte(ignoreContent), 0o644); err != nil {
+		return err
+	}
+
+	fmt.Printf("Created %s\n", rcPath)
+	fmt.Printf("Created %s\n", ignorePath)
+	return nil
+}
+
+func generateConfig() string {
+	var b strings.Builder
+	b.WriteString("# tasia configuration — severity overrides\n")
+	b.WriteString("# Uncomment and change a severity to override the default.\n")
+	b.WriteString("# Valid values: critical, high, medium, low\n")
+	b.WriteString("#\n")
+	b.WriteString("# See: tasia rules --format text\n\n")
+	b.WriteString("severities:\n")
+
+	cat := rules.Catalog()
+	currentCategory := ""
+	for _, r := range cat {
+		if r.Category != currentCategory {
+			currentCategory = r.Category
+			b.WriteString(fmt.Sprintf("\n  # --- %s ---\n", currentCategory))
+		}
+		b.WriteString(fmt.Sprintf("  # %s: %s\n", r.ID, strings.ToLower(string(r.Default))))
+	}
+	return b.String()
+}
+
+func generateIgnore() string {
+	var b strings.Builder
+	b.WriteString("# tasia ignore patterns — one glob per line\n")
+	b.WriteString("# Lines starting with # are comments.\n")
+	b.WriteString("# Patterns follow .gitignore syntax.\n\n")
+	b.WriteString("# Common directories to skip:\n")
+	b.WriteString("# node_modules/\n")
+	b.WriteString("# .git/\n")
+	b.WriteString("# vendor/\n")
+	b.WriteString("# dist/\n")
+	b.WriteString("# build/\n")
+	return b.String()
 }
 
 func runSchema(_ []string) error {
