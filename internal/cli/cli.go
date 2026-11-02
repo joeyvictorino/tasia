@@ -204,8 +204,12 @@ func runReview(args []string) error {
 		}
 	}
 
-	// Exit behavior for review: do not auto-exit non-zero here unless?
-	// The spec uses ci for blocking. Review just reports.
+	exitCode := 0
+	if decision == "BLOCKED" {
+		exitCode = 1
+	}
+	fmt.Fprintln(os.Stderr, report.ExitSummaryLine(findings, exitCode))
+
 	return nil
 }
 
@@ -252,9 +256,10 @@ func runCI(args []string) error {
 	report.PrintSummary(findings, decision, risk)
 
 	if decision == "BLOCKED" {
-		fmt.Fprintf(os.Stderr, "CI blocked: %s risk findings present\n", risk)
+		fmt.Fprintln(os.Stderr, report.ExitSummaryLine(findings, 1))
 		os.Exit(1)
 	}
+	fmt.Fprintln(os.Stderr, report.ExitSummaryLine(findings, 0))
 	return nil
 }
 

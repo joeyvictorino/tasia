@@ -517,6 +517,42 @@ func buildFindingsToon(findings []rules.Finding) string {
 	return b.String()
 }
 
+// ExitSummaryLine returns a one-line human-readable summary of findings by
+// severity and the exit-code reason, suitable for printing to stderr.
+func ExitSummaryLine(findings []rules.Finding, exitCode int) string {
+	counts := map[rules.Severity]int{}
+	for _, f := range findings {
+		counts[f.Severity]++
+	}
+
+	var parts []string
+	for _, sev := range severityOrder {
+		if n := counts[sev]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, strings.ToLower(string(sev))))
+		}
+	}
+
+	total := len(findings)
+	breakdown := ""
+	if len(parts) > 0 {
+		breakdown = " (" + strings.Join(parts, ", ") + ")"
+	}
+
+	var reason string
+	switch exitCode {
+	case 0:
+		reason = "pass"
+	case 1:
+		reason = "findings above threshold"
+	case 2:
+		reason = "error"
+	default:
+		reason = "unknown"
+	}
+
+	return fmt.Sprintf("Found %d issue(s)%s. Exit code: %d (%s)", total, breakdown, exitCode, reason)
+}
+
 func groupBySev(fs []rules.Finding) map[rules.Severity][]rules.Finding {
 	m := map[rules.Severity][]rules.Finding{}
 	for _, f := range fs {

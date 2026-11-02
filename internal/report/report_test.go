@@ -394,6 +394,59 @@ func TestFindingsToJSONOmitsSummaryWhenNil(t *testing.T) {
 	}
 }
 
+func TestExitSummaryLineNoFindings(t *testing.T) {
+	line := ExitSummaryLine(nil, 0)
+	if line != "Found 0 issue(s). Exit code: 0 (pass)" {
+		t.Errorf("unexpected: %q", line)
+	}
+}
+
+func TestExitSummaryLineWithFindings(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "a", Severity: rules.SeverityCritical},
+		{ID: "b", Severity: rules.SeverityHigh},
+		{ID: "c", Severity: rules.SeverityHigh},
+		{ID: "d", Severity: rules.SeverityMedium},
+		{ID: "e", Severity: rules.SeverityLow},
+	}
+	line := ExitSummaryLine(findings, 1)
+	if !strings.Contains(line, "Found 5 issue(s)") {
+		t.Errorf("missing count: %q", line)
+	}
+	if !strings.Contains(line, "1 critical") {
+		t.Errorf("missing critical: %q", line)
+	}
+	if !strings.Contains(line, "2 high") {
+		t.Errorf("missing high: %q", line)
+	}
+	if !strings.Contains(line, "1 medium") {
+		t.Errorf("missing medium: %q", line)
+	}
+	if !strings.Contains(line, "1 low") {
+		t.Errorf("missing low: %q", line)
+	}
+	if !strings.Contains(line, "Exit code: 1 (findings above threshold)") {
+		t.Errorf("missing exit reason: %q", line)
+	}
+}
+
+func TestExitSummaryLinePassExitCode(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "a", Severity: rules.SeverityLow},
+	}
+	line := ExitSummaryLine(findings, 0)
+	if !strings.Contains(line, "Exit code: 0 (pass)") {
+		t.Errorf("unexpected: %q", line)
+	}
+}
+
+func TestExitSummaryLineErrorExitCode(t *testing.T) {
+	line := ExitSummaryLine(nil, 2)
+	if !strings.Contains(line, "Exit code: 2 (error)") {
+		t.Errorf("unexpected: %q", line)
+	}
+}
+
 func TestErrorJSONIsValidFailClosed(t *testing.T) {
 	out := ErrorJSON([]collect.ConfigError{{Path: "docker-compose.yml", Err: "yaml: line 2: bad"}})
 	var parsed struct {
