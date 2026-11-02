@@ -42,7 +42,7 @@ func TestFindingsToJSONIncludesSchemaVersion(t *testing.T) {
 		Title: "test", File: "f.yaml", Line: 1,
 		Evidence: "x=1", Why: "because", Fix: "fix it",
 	}}
-	out, err := FindingsToJSON(findings, "BLOCKED", "HIGH")
+	out, err := FindingsToJSON(findings, "BLOCKED", "HIGH", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -260,6 +260,55 @@ func TestSeverityToSARIFMapping(t *testing.T) {
 	}
 }
 
+func TestAllCatalogRulesProduceValidSARIFLevel(t *testing.T) {
+	validLevels := map[string]bool{"error": true, "warning": true, "note": true}
+	catalog := rules.Catalog()
+	if len(catalog) == 0 {
+		t.Fatal("catalog is empty")
+	}
+	for _, r := range catalog {
+		if r.Default == "" {
+			t.Errorf("rule %s has empty default severity", r.ID)
+			continue
+		}
+		f := rules.Finding{
+			ID:       r.ID,
+			Severity: r.Default,
+			Title:    r.Title,
+			File:     "test.yml",
+			Line:     1,
+			Evidence: "test",
+			Why:      "test",
+			Fix:      "test",
+		}
+		out, err := FindingsToSARIF([]rules.Finding{f}, "test")
+		if err != nil {
+			t.Errorf("rule %s: FindingsToSARIF error: %v", r.ID, err)
+			continue
+		}
+		var sarif struct {
+			Runs []struct {
+				Results []struct {
+					Level string `json:"level"`
+				} `json:"results"`
+			} `json:"runs"`
+		}
+		if err := json.Unmarshal([]byte(out), &sarif); err != nil {
+			t.Errorf("rule %s: invalid SARIF JSON: %v", r.ID, err)
+			continue
+		}
+		if len(sarif.Runs) != 1 || len(sarif.Runs[0].Results) != 1 {
+			t.Errorf("rule %s: expected 1 run with 1 result", r.ID)
+			continue
+		}
+		level := sarif.Runs[0].Results[0].Level
+		if !validLevels[level] {
+			t.Errorf("rule %s (severity %s): SARIF level %q is not valid (want error/warning/note)", r.ID, r.Default, level)
+		}
+	}
+	t.Logf("verified %d catalog rules produce valid SARIF levels", len(catalog))
+}
+
 func TestErrorJSONIsValidFailClosed(t *testing.T) {
 	out := ErrorJSON([]collect.ConfigError{{Path: "docker-compose.yml", Err: "yaml: line 2: bad"}})
 	var parsed struct {
