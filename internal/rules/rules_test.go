@@ -906,6 +906,58 @@ func TestDockerfileExpose(t *testing.T) {
 	}
 }
 
+func TestDatastoreHostNetworkDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "ollama", Image: "ollama/ollama:0.3", Ports: []compose.PortMapping{{HostPort: 11434, TargetPort: 11434, Raw: "11434:11434", Line: 3}}},
+				{Name: "redis", Image: "redis:7", NetworkMode: "host", NetworkModeLine: 8},
+			},
+		}},
+	}
+	var found *Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "exposed_datastore" && strings.Contains(f.Evidence, "network_mode: host") {
+			ff := f
+			found = &ff
+		}
+	}
+	if found == nil {
+		t.Fatal("data store on host network not detected")
+	}
+	if found.Severity != SeverityHigh {
+		t.Errorf("data store beside AI on host network should be HIGH, got %s", found.Severity)
+	}
+}
+
+func TestDatastoreHostNetworkWithoutAIIsMedium(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "app", Image: "myapp:1.0", Ports: []compose.PortMapping{{HostPort: 8080, TargetPort: 8080, Raw: "8080:8080", Line: 3}}},
+				{Name: "pg", Image: "postgres:16", NetworkMode: "host", NetworkModeLine: 7},
+			},
+		}},
+	}
+	var found *Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "exposed_datastore" && strings.Contains(f.Evidence, "network_mode: host") {
+			ff := f
+			found = &ff
+		}
+	}
+	if found == nil {
+		t.Fatal("data store on host network not detected when alone")
+	}
+	if found.Severity != SeverityMedium {
+		t.Errorf("data store without AI should be MEDIUM, got %s", found.Severity)
+	}
+}
+
 func TestDatastoreEscalatesAlongsideAgentRuntime(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",
