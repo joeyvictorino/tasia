@@ -195,7 +195,7 @@ func Run(args []string) error {
 	case "pid-ns":
 		return runPidns(args[1:])
 	case "ipc":
-		return runIpcns(args[1:])
+		return runIpcNS(args[1:])
 	case "sysctls":
 		return runSysctls(args[1:])
 	case "devices":
@@ -292,6 +292,10 @@ func Run(args []string) error {
 		return runUtsNS(args[1:])
 	case "cgroupv2":
 		return runCgroupV2(args[1:])
+	case "ipc-ns":
+		return runIpcNS(args[1:])
+	case "net-ns":
+		return runNetNS(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

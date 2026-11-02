@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 
 	"github.com/joeyvictorino/tasia/internal/collect"
-	"github.com/joeyvictorino/tasia/internal/ipcns"
+	"github.com/joeyvictorino/tasia/internal/netns"
 )
 
-func runIpcns(args []string) error {
-	fs := flag.NewFlagSet("ipc", flag.ContinueOnError)
+func runNetNS(args []string) error {
+	fs := flag.NewFlagSet("net-ns", flag.ContinueOnError)
 	path := fs.String("path", ".", "path to scan")
 	format := fs.String("format", "text", "output format: text or json")
 	recursive := fs.Bool("recursive", false, "scan nested directories")
@@ -26,7 +26,7 @@ func runIpcns(args []string) error {
 	}
 
 	if *recursive {
-		return runIpcnsRecursive(absPath, *format)
+		return runNetNSRecursive(absPath, *format)
 	}
 
 	collected, err := collect.WalkAndCollect(absPath)
@@ -34,20 +34,20 @@ func runIpcns(args []string) error {
 		return err
 	}
 
-	r := ipcns.Analyze(*collected)
-	return printIpcnsResult(r, *format)
+	r := netns.Analyze(collected)
+	return printNetNSResult(r, *format)
 }
 
-func runIpcnsRecursive(root, format string) error {
+func runNetNSRecursive(root, format string) error {
 	dirs := findScanDirs(root)
 	for _, d := range dirs {
 		collected, err := collect.WalkAndCollect(d)
 		if err != nil {
 			continue
 		}
-		r := ipcns.Analyze(*collected)
+		r := netns.Analyze(collected)
 		if r.Summary.TotalServices > 0 {
-			if err := printIpcnsResult(r, format); err != nil {
+			if err := printNetNSResult(r, format); err != nil {
 				return err
 			}
 		}
@@ -55,14 +55,14 @@ func runIpcnsRecursive(root, format string) error {
 	return nil
 }
 
-func printIpcnsResult(r ipcns.Report, format string) error {
+func printNetNSResult(r netns.Report, format string) error {
 	switch format {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		return enc.Encode(r)
 	default:
-		fmt.Print(ipcns.FormatText(r))
+		fmt.Print(netns.FormatText(r))
 	}
 	return nil
 }
