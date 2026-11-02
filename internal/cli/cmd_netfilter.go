@@ -19,20 +19,41 @@ func runNetfilter(args []string) error {
 		return err
 	}
 
-	c, err := collect.Run(*path, *recursive)
+	if *recursive {
+		return runNetfilterRecursive(*path, *format)
+	}
+
+	c, err := collect.WalkAndCollect(*path)
 	if err != nil {
-		return fmt.Errorf("collect: %w", err)
+		return fmt.Errorf("netfilter: %w", err)
 	}
 
 	r := netfilter.Analyze(c)
+	printNetfilterResult(r, *format)
+	return nil
+}
 
-	switch *format {
+func runNetfilterRecursive(root, format string) error {
+	dirs := findScanDirs(root)
+	for _, d := range dirs {
+		c, err := collect.WalkAndCollect(d)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "netfilter: skipping %s: %v\n", d, err)
+			continue
+		}
+		r := netfilter.Analyze(c)
+		printNetfilterResult(r, format)
+	}
+	return nil
+}
+
+func printNetfilterResult(r netfilter.Report, format string) {
+	switch format {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(r)
+		enc.Encode(r)
 	default:
 		fmt.Print(netfilter.FormatText(r))
 	}
-	return nil
 }

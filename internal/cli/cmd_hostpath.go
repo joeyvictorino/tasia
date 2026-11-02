@@ -19,20 +19,41 @@ func runHostpath(args []string) error {
 		return err
 	}
 
-	c, err := collect.Run(*path, *recursive)
+	if *recursive {
+		return runHostpathRecursive(*path, *format)
+	}
+
+	c, err := collect.WalkAndCollect(*path)
 	if err != nil {
-		return fmt.Errorf("collect: %w", err)
+		return fmt.Errorf("hostpath: %w", err)
 	}
 
 	r := hostpath.Analyze(c)
+	printHostpathResult(r, *format)
+	return nil
+}
 
-	switch *format {
+func runHostpathRecursive(root, format string) error {
+	dirs := findScanDirs(root)
+	for _, d := range dirs {
+		c, err := collect.WalkAndCollect(d)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "hostpath: skipping %s: %v\n", d, err)
+			continue
+		}
+		r := hostpath.Analyze(c)
+		printHostpathResult(r, format)
+	}
+	return nil
+}
+
+func printHostpathResult(r hostpath.Report, format string) {
+	switch format {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(r)
+		enc.Encode(r)
 	default:
 		fmt.Print(hostpath.FormatText(r))
 	}
-	return nil
 }

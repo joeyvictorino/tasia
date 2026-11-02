@@ -350,6 +350,8 @@ func Run(args []string) error {
 		return runHostpath(args[1:])
 	case "netfilter":
 		return runNetfilter(args[1:])
+	case "logdriver":
+		return runLogdriver(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
