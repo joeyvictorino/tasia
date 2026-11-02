@@ -332,6 +332,10 @@ func Run(args []string) error {
 		return runNoexec(args[1:])
 	case "socket-audit":
 		return runSocketAudit(args[1:])
+	case "pidsec":
+		return runPidsec(args[1:])
+	case "confinement":
+		return runConfinement(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
