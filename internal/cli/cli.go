@@ -328,6 +328,10 @@ func Run(args []string) error {
 		return runRateLimit(args[1:])
 	case "deploy-policy":
 		return runDeploypol(args[1:])
+	case "noexec":
+		return runNoexec(args[1:])
+	case "socket-audit":
+		return runSocketAudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
