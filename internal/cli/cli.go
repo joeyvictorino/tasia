@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/joeyvictorino/tasia/internal/collect"
+	"github.com/joeyvictorino/tasia/internal/ignore"
 	"github.com/joeyvictorino/tasia/internal/llm"
 	"github.com/joeyvictorino/tasia/internal/report"
 	"github.com/joeyvictorino/tasia/internal/rules"
@@ -135,6 +136,11 @@ func runReview(args []string) error {
 	// Rules
 	findings := rules.Evaluate(collected)
 
+	// Apply .tasiaignore suppressions
+	if pol, err := ignore.Load(absPath); err == nil {
+		findings = filterFindings(findings, pol)
+	}
+
 	// Decide
 	decision, risk := report.Decide(findings, *failOn, *strict)
 
@@ -206,6 +212,11 @@ func runCI(args []string) error {
 	}
 
 	findings := rules.Evaluate(collected)
+
+	if pol, err := ignore.Load(absPath); err == nil {
+		findings = filterFindings(findings, pol)
+	}
+
 	decision, risk := report.Decide(findings, *failOn, false)
 
 	report.PrintSummary(findings, decision, risk)
@@ -335,6 +346,11 @@ func runExplain(args []string) error {
 		os.Exit(2)
 	}
 	findings := rules.Evaluate(collected)
+
+	if pol, err := ignore.Load(absPath); err == nil {
+		findings = filterFindings(findings, pol)
+	}
+
 	decision, risk := report.Decide(findings, "high", false)
 
 	redacted := llm.RedactPack(decision, risk, findings)
@@ -383,4 +399,14 @@ func runExplain(args []string) error {
 	}
 	fmt.Printf("Wrote %s\n", filepath.Join(outDir, "LLM_REVIEW.md"))
 	return nil
+}
+
+func filterFindings(findings []rules.Finding, pol *ignore.Policy) []rules.Finding {
+	var kept []rules.Finding
+	for _, f := range findings {
+		if !pol.Suppresses(f.ID, f.File) {
+			kept = append(kept, f)
+		}
+	}
+	return kept
 }
