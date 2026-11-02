@@ -54,6 +54,8 @@ func Run(args []string) error {
 		return runReview(args[1:])
 	case "diff":
 		return runDiff(args[1:])
+	case "check":
+		return runCheck(args[1:])
 	case "ci":
 		return runCI(args[1:])
 	case "install":
@@ -101,6 +103,7 @@ func printUsage() {
 Usage:
   tasia diff --base DIR --current DIR [--format text|json] [--fail-on critical|high|medium|low]
   tasia review [--path .] [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict] [--recursive]
+  tasia check [--path .] [--fail-on critical|high|medium|low] [--format text|json] [--recursive]
   tasia ci [--path .] [--fail-on critical|high|medium|low] [--recursive]
   tasia install --pre-push
   tasia uninstall --pre-push
@@ -108,6 +111,7 @@ Usage:
   tasia rules [--format text|json]
   tasia init [--path .]
   tasia watch [--path .] [--interval 2s] [--fail-on critical|high|medium|low]
+  tasia profile [--path .] [--format text|json] [--recursive]
   tasia schema
   tasia version
   tasia help
@@ -701,4 +705,228 @@ func generateIgnore() string {
 func runSchema(_ []string) error {
 	fmt.Println(report.FindingsJSONSchema)
 	return nil
+}
+
+type profileResult struct {
+	Score           int                    `json:"score"`
+	Grade           string                 `json:"grade"`
+	TotalFindings   int                    `json:"total_findings"`
+	BySeverity      map[string]int         `json:"by_severity"`
+	ByCategory      map[string]int         `json:"by_category"`
+	TopIssues       []profileIssue         `json:"top_issues"`
+	Recommendations []string               `json:"recommendations"`
+}
+
+type profileIssue struct {
+	ID       string `json:"id"`
+	Severity string `json:"severity"`
+	Title    string `json:"title"`
+	Count    int    `json:"count"`
+}
+
+func runProfile(args []string) error {
+	fs := flag.NewFlagSet("profile", flag.ContinueOnError)
+	path := fs.String("path", ".", "path to scan")
+	format := fs.String("format", "text", "output format: text or json")
+	recursive := fs.Bool("recursive", false, "scan nested directories")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	absPath, err := filepath.Abs(*path)
+	if err != nil {
+		return err
+	}
+
+	var findings []rules.Finding
+	if *recursive {
+		findings = scanRecursive(absPath)
+	} else {
+		findings = scanDir(absPath)
+	}
+
+	result := buildProfile(findings)
+
+	switch *format {
+	case "json":
+		data, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+	default:
+		printProfile(result)
+	}
+	return nil
+}
+
+func buildProfile(findings []rules.Finding) profileResult {
+	bySeverity := map[string]int{}
+	byCategory := map[string]int{}
+	issueCount := map[string]int{}
+	issueInfo := map[string]rules.Finding{}
+
+	for _, f := range findings {
+		sev := string(f.Severity)
+		bySeverity[sev]++
+
+		cat := categoryFromID(f.ID)
+		byCategory[cat]++
+
+		issueCount[f.ID]++
+		if _, exists := issueInfo[f.ID]; !exists {
+			issueInfo[f.ID] = f
+		}
+	}
+
+	score := computeScore(bySeverity)
+	grade := scoreToGrade(score)
+
+	var topIssues []profileIssue
+	for id, count := range issueCount {
+		f := issueInfo[id]
+		topIssues = append(topIssues, profileIssue{
+			ID:       id,
+			Severity: string(f.Severity),
+			Title:    f.Title,
+			Count:    count,
+		})
+	}
+	sortProfileIssues(topIssues)
+	if len(topIssues) > 5 {
+		topIssues = topIssues[:5]
+	}
+
+	recommendations := buildRecommendations(bySeverity, byCategory)
+
+	return profileResult{
+		Score:           score,
+		Grade:           grade,
+		TotalFindings:   len(findings),
+		BySeverity:      bySeverity,
+		ByCategory:      byCategory,
+		TopIssues:       topIssues,
+		Recommendations: recommendations,
+	}
+}
+
+func computeScore(bySeverity map[string]int) int {
+	score := 100
+	score -= bySeverity["CRITICAL"] * 25
+	score -= bySeverity["HIGH"] * 10
+	score -= bySeverity["MEDIUM"] * 5
+	score -= bySeverity["LOW"] * 2
+	if score < 0 {
+		score = 0
+	}
+	return score
+}
+
+func scoreToGrade(score int) string {
+	switch {
+	case score >= 90:
+		return "A"
+	case score >= 75:
+		return "B"
+	case score >= 60:
+		return "C"
+	case score >= 40:
+		return "D"
+	default:
+		return "F"
+	}
+}
+
+func categoryFromID(id string) string {
+	parts := strings.SplitN(id, "_", 2)
+	if len(parts) == 0 {
+		return "unknown"
+	}
+	prefixes := map[string]string{
+		"exposed":       "compose",
+		"docker":        "compose",
+		"privileged":    "compose",
+		"permissive":    "compose",
+		"latest":        "compose",
+		"broad":         "compose",
+		"env":           "compose",
+		"no":            "compose",
+		"vector":        "compose",
+		"agent":         "agent",
+		"kube":          "kubernetes",
+		"helm":          "helm",
+		"tf":            "terraform",
+		"dockerfile":    "dockerfile",
+		"reverse":       "proxy",
+	}
+	if cat, ok := prefixes[parts[0]]; ok {
+		return cat
+	}
+	return "other"
+}
+
+func sortProfileIssues(issues []profileIssue) {
+	for i := 0; i < len(issues); i++ {
+		for j := i + 1; j < len(issues); j++ {
+			ri := rules.Severity(issues[i].Severity).Rank()
+			rj := rules.Severity(issues[j].Severity).Rank()
+			if rj > ri || (rj == ri && issues[j].Count > issues[i].Count) {
+				issues[i], issues[j] = issues[j], issues[i]
+			}
+		}
+	}
+}
+
+func buildRecommendations(bySeverity, byCategory map[string]int) []string {
+	var recs []string
+	if bySeverity["CRITICAL"] > 0 {
+		recs = append(recs, fmt.Sprintf("Fix %d critical findings immediately — these represent direct compromise vectors", bySeverity["CRITICAL"]))
+	}
+	if byCategory["compose"] > 3 {
+		recs = append(recs, "Review docker-compose exposure rules — multiple services are published to all interfaces")
+	}
+	if byCategory["terraform"] > 0 {
+		recs = append(recs, "Tighten cloud infrastructure security groups and IAM policies")
+	}
+	if byCategory["agent"] > 0 {
+		recs = append(recs, "Restrict agent runtime permissions — auto-approve and writable mounts increase blast radius")
+	}
+	if byCategory["kubernetes"] > 0 {
+		recs = append(recs, "Apply least-privilege to Kubernetes workloads — avoid privileged containers and host networking")
+	}
+	if len(recs) == 0 {
+		recs = append(recs, "No critical issues detected — maintain current security posture")
+	}
+	return recs
+}
+
+func printProfile(p profileResult) {
+	fmt.Printf("Security Profile: %s (%d/100)\n", p.Grade, p.Score)
+	fmt.Printf("Total findings: %d\n\n", p.TotalFindings)
+
+	fmt.Println("By severity:")
+	for _, sev := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW"} {
+		if count, ok := p.BySeverity[sev]; ok && count > 0 {
+			fmt.Printf("  %-10s %d\n", sev, count)
+		}
+	}
+
+	if len(p.ByCategory) > 0 {
+		fmt.Println("\nBy category:")
+		for cat, count := range p.ByCategory {
+			fmt.Printf("  %-15s %d\n", cat, count)
+		}
+	}
+
+	if len(p.TopIssues) > 0 {
+		fmt.Println("\nTop issues:")
+		for _, issue := range p.TopIssues {
+			fmt.Printf("  [%s] %s (%dx)\n", issue.Severity, issue.Title, issue.Count)
+		}
+	}
+
+	fmt.Println("\nRecommendations:")
+	for _, r := range p.Recommendations {
+		fmt.Printf("  - %s\n", r)
+	}
 }
