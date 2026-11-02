@@ -1,3 +1,7 @@
+// Package cli implements tasia's command-line interface: review, ci,
+// install/uninstall, explain, rules, schema and version commands. It
+// wires together collect, rules, ignore, config and report into the
+// scan-evaluate-decide-output pipeline.
 package cli
 
 import (

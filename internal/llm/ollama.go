@@ -1,3 +1,8 @@
+// Package llm provides the optional local-LLM integration for
+// tasia explain. It redacts findings to remove any residual
+// sensitive data, sends only the redacted facts to a local Ollama
+// instance, and writes the prose review to .tasia/LLM_REVIEW.md.
+// The deterministic rules never depend on this package.
 package llm
 
 import (

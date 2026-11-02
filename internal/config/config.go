@@ -1,3 +1,6 @@
+// Package config parses .tasiarc.yaml files for user-specified
+// severity overrides. The [Config.SeverityFor] method returns the
+// overridden severity for a rule ID, or empty if no override is set.
 package config
 
 import (

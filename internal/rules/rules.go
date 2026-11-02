@@ -1,3 +1,7 @@
+// Package rules implements tasia's deterministic security rules. Each rule
+// inspects collected configuration data and returns zero or more [Finding]
+// values with stable IDs, severity, file:line location and remediation
+// guidance. The [Evaluate] function runs every rule; [Catalog] lists them.
 package rules
 
 import (
@@ -476,6 +480,18 @@ func environmentFindings(svc compose.Service, relCompose string) []Finding {
 				Fix:      "Inject real secrets at deploy time (e.g. secrets, sops, platform env); commit only placeholders.",
 			})
 		}
+		if pat := collect.LooksLikeSecretValue(value); pat != "" {
+			out = append(out, Finding{
+				ID:       "env_hardcoded_secret",
+				Severity: SeverityHigh,
+				Title:    fmt.Sprintf("compose env value for %s looks like a real secret", key),
+				File:     relCompose,
+				Line:     svc.EnvLine,
+				Evidence: fmt.Sprintf("%s: value matches %s", key, pat),
+				Why:      "The value matches a known secret pattern. Committing real credentials is a security risk even in compose files.",
+				Fix:      "Remove the real secret; use Docker secrets or environment injection at deploy time. Rotate the exposed credential.",
+			})
+		}
 		if isCORSKey(key) && isPermissiveOrigin(value) {
 			out = append(out, Finding{
 				ID:       "permissive_cors",
@@ -506,16 +522,31 @@ func envFileFindings(envFiles []collect.EnvFile) []Finding {
 	var out []Finding
 	for _, ef := range envFiles {
 		for _, key := range ef.Keys {
-			out = append(out, Finding{
-				ID:       "env_token_key",
-				Severity: SeverityMedium,
-				Title:    fmt.Sprintf(".env contains token key name: %s", key.Name),
-				File:     ef.Path,
-				Line:     key.Line,
-				Evidence: key.Name,
-				Why:      "Token or secret key names in env files indicate credentials may be present. Never commit real secrets; use .env.example.",
-				Fix:      "Move real secrets out of repo; add .env to .gitignore; provide .env.example with placeholders only.",
-			})
+			isSecretName := collect.LooksLikeSecretKeyName(key.Name)
+			if isSecretName {
+				out = append(out, Finding{
+					ID:       "env_token_key",
+					Severity: SeverityMedium,
+					Title:    fmt.Sprintf(".env contains token key name: %s", key.Name),
+					File:     ef.Path,
+					Line:     key.Line,
+					Evidence: key.Name,
+					Why:      "Token or secret key names in env files indicate credentials may be present. Never commit real secrets; use .env.example.",
+					Fix:      "Move real secrets out of repo; add .env to .gitignore; provide .env.example with placeholders only.",
+				})
+			}
+			if key.ValuePattern != "" && !isSecretName {
+				out = append(out, Finding{
+					ID:       "env_hardcoded_secret",
+					Severity: SeverityHigh,
+					Title:    fmt.Sprintf(".env value for %s looks like a real secret", key.Name),
+					File:     ef.Path,
+					Line:     key.Line,
+					Evidence: fmt.Sprintf("%s: value matches %s", key.Name, key.ValuePattern),
+					Why:      "The value matches a known secret pattern. Committing real credentials to a repository is a security risk even if the repo is private.",
+					Fix:      "Remove the real secret and inject it at deploy time (e.g. secrets manager, platform env). Rotate the exposed credential.",
+				})
+			}
 		}
 	}
 	return out

@@ -1,3 +1,8 @@
+// Package report turns [rules.Finding] slices into output: terminal
+// summaries, JSON (with schema_version), SARIF v2.1.0 for GitHub Code
+// Scanning, and the .tasia/ hardening pack. The [Decide] function
+// computes the PASS/BLOCKED/ERROR verdict from findings and the fail-on
+// threshold.
 package report
 
 import (

@@ -1,3 +1,8 @@
+// Package compose parses Docker Compose files using yaml.v3 nodes for
+// accurate line numbers. It extracts service definitions, published
+// ports, volumes, environment variables, network configuration and
+// restart policies without evaluating or interpolating variable
+// references.
 package compose
 
 import (

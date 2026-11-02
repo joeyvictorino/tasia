@@ -1,3 +1,7 @@
+// Package ignore parses .tasiaignore files and applies suppression
+// policies to findings. An entry can suppress a rule everywhere, all
+// findings in a file, or a specific rule in a specific file. Glob
+// patterns are supported for file matching.
 package ignore
 
 import (

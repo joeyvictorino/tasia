@@ -108,6 +108,72 @@ func TestEnvKeyLineNumbers(t *testing.T) {
 	}
 }
 
+func TestEnvHardcodedSecretFromEnvFile(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		EnvFiles: []collect.EnvFile{{
+			Path: ".env",
+			Keys: []collect.EnvKey{
+				{Name: "OPENAI_API_KEY", Line: 1, ValuePattern: ""},
+				{Name: "RANDOM_VAR", Line: 3, ValuePattern: "hex string >=32 chars"},
+			},
+		}},
+	}
+	fs := Evaluate(c)
+	var hardcoded []Finding
+	for _, f := range fs {
+		if f.ID == "env_hardcoded_secret" {
+			hardcoded = append(hardcoded, f)
+		}
+	}
+	if len(hardcoded) != 1 {
+		t.Fatalf("expected 1 env_hardcoded_secret finding (RANDOM_VAR only), got %d", len(hardcoded))
+	}
+	if hardcoded[0].Line != 3 {
+		t.Errorf("expected finding on line 3 (RANDOM_VAR), got line %d", hardcoded[0].Line)
+	}
+	if hardcoded[0].Severity != SeverityHigh {
+		t.Errorf("expected HIGH severity, got %s", hardcoded[0].Severity)
+	}
+	if !strings.Contains(hardcoded[0].Evidence, "RANDOM_VAR") {
+		t.Error("evidence should mention the key name")
+	}
+	if !strings.Contains(hardcoded[0].Evidence, "hex string") {
+		t.Error("evidence should mention the pattern name")
+	}
+}
+
+func TestEnvHardcodedSecretFromCompose(t *testing.T) {
+	c := &collect.Collected{
+		Root: "/tmp/test",
+		ComposeFiles: []compose.File{{
+			Path: "/tmp/test/docker-compose.yml",
+			Services: []compose.Service{{
+				Name:        "app",
+				Image:       "myapp:1.0",
+				Environment: []string{"SECRET_KEY=sk-abc123456789"},
+				EnvLine:     10,
+			}},
+		}},
+	}
+	fs := Evaluate(c)
+	found := false
+	for _, f := range fs {
+		if f.ID == "env_hardcoded_secret" {
+			found = true
+			if !strings.Contains(f.Evidence, "SECRET_KEY") {
+				t.Errorf("evidence should mention the key name, got %q", f.Evidence)
+			}
+			if strings.Contains(f.Evidence, "sk-abc") {
+				t.Error("evidence must not contain the actual secret value")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected env_hardcoded_secret finding for sk- prefix in compose environment")
+	}
+}
+
 func TestNewComponentDetection(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",

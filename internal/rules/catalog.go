@@ -28,6 +28,7 @@ func Catalog() []RuleInfo {
 		{ID: "latest_image", Default: SeverityMedium, Title: "Mutable image tag", Description: "image: uses :latest or no tag", Category: "compose"},
 		{ID: "broad_bind_mount", Default: SeverityMedium, Title: "Broad writable bind mount", Description: "Broad volume like .:/app mounted writable (HIGH on agent runtimes)", Category: "compose"},
 		{ID: "env_token_key", Default: SeverityMedium, Title: "Secret key name in config", Description: "Token/secret/key name found in .env or compose environment (value never read)", Category: "compose"},
+		{ID: "env_hardcoded_secret", Default: SeverityHigh, Title: "Hardcoded secret value", Description: "Value matches a known secret pattern (sk-, ghp_, AKIA, JWT, hex/base64 blob); value never emitted", Category: "compose"},
 		{ID: "no_internal_network", Default: SeverityMedium, Title: "No internal network separation", Description: "Multi-service stack with published ports but no internal: true network", Category: "compose"},
 
 		// Compose — vector DB auth

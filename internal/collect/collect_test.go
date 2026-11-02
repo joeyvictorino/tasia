@@ -81,3 +81,57 @@ func TestMalformedComposeIsRecordedNotSilentlySkipped(t *testing.T) {
 		t.Errorf("parse error path = %q, want relative docker-compose.yml", c.ParseErrors[0].Path)
 	}
 }
+
+func TestLooksLikeSecretValue(t *testing.T) {
+	cases := []struct {
+		value   string
+		pattern string
+	}{
+		{"sk-1234567890abcdef1234567890abcdef", "sk- prefix (OpenAI/Stripe)"},
+		{"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01", "ghp_ prefix (GitHub PAT)"},
+		{"AKIAIOSFODNN7EXAMPLE", "AKIA prefix (AWS access key)"},
+		{"xoxb-123456789012-1234567890123-AbCd", "xoxb- prefix (Slack bot)"},
+		{"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJ prefix (JWT/base64 token)"},
+		{"0123456789abcdef0123456789abcdef", "hex string >=32 chars"},
+		{"hf_ABCDEFGHIJKLMNOPQRSTUVWXyz", "hf_ prefix (Hugging Face)"},
+		{"changeme", ""},
+		{"hello", ""},
+		{"", ""},
+		{"TODO", ""},
+		{"short", ""},
+	}
+	for _, tc := range cases {
+		got := LooksLikeSecretValue(tc.value)
+		if got != tc.pattern {
+			t.Errorf("LooksLikeSecretValue(%q) = %q, want %q", tc.value, got, tc.pattern)
+		}
+	}
+}
+
+func TestEnvFileSecretValueDetection(t *testing.T) {
+	dir, err := filepath.Abs(filepath.Join("..", "..", "testdata", "env-secrets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	col, err := WalkAndCollect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(col.EnvFiles) == 0 {
+		t.Fatal("expected env files from testdata/env-secrets")
+	}
+	hasValuePattern := false
+	for _, ef := range col.EnvFiles {
+		for _, key := range ef.Keys {
+			if key.ValuePattern != "" {
+				hasValuePattern = true
+			}
+			if strings.Contains(key.ValuePattern, "sk-1234") || strings.Contains(key.ValuePattern, "ghp_ABCDE") {
+				t.Errorf("actual value leaked into ValuePattern: %s", key.ValuePattern)
+			}
+		}
+	}
+	if !hasValuePattern {
+		t.Error("expected at least one key with a ValuePattern from testdata/env-secrets")
+	}
+}

@@ -1,3 +1,8 @@
+// Package collect walks a directory tree and parses Docker Compose,
+// .env, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest and Helm
+// values.yaml files into structured data. The result is a [Collected]
+// value that the rules package inspects. Parsing uses yaml.v3 nodes for
+// accurate line numbers and never reads secret values into the output.
 package collect
 
 import (
@@ -50,10 +55,13 @@ type EnvFile struct {
 }
 
 // EnvKey is a secret-looking key name and the 1-based line it appears on.
-// Values are never captured.
+// Values are never captured. ValuePattern is set only when the value
+// matches a known secret pattern (e.g. "sk- prefix"); the actual value
+// is never stored.
 type EnvKey struct {
-	Name string
-	Line int
+	Name         string
+	Line         int
+	ValuePattern string // empty unless value matches a known pattern
 }
 
 // KeyNames returns just the key names (values are never stored).
@@ -462,20 +470,21 @@ func parseEnvKeys(path string) (EnvFile, error) {
 		return EnvFile{}, err
 	}
 	keys := []EnvKey{}
-	// naive: lines with KEY= , ignore values completely
 	lines := strings.Split(string(b), "\n")
-	re := regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=`)
+	re := regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=(.*)`)
 	for i, ln := range lines {
 		m := re.FindStringSubmatch(ln)
 		if m != nil {
 			k := m[1]
-			// only collect likely secret names, but per spec we collect token key names
+			v := strings.TrimSpace(m[2])
+			v = strings.Trim(v, `"'`)
 			if LooksLikeSecretKeyName(k) {
-				keys = append(keys, EnvKey{Name: k, Line: i + 1})
+				keys = append(keys, EnvKey{Name: k, Line: i + 1, ValuePattern: LooksLikeSecretValue(v)})
+			} else if pat := LooksLikeSecretValue(v); pat != "" {
+				keys = append(keys, EnvKey{Name: k, Line: i + 1, ValuePattern: pat})
 			}
 		}
 	}
-	// Path will be made relative by caller (WalkAndCollect) for consistency with compose files
 	return EnvFile{Path: path, Keys: keys}, nil
 }
 
@@ -487,6 +496,80 @@ func LooksLikeSecretKeyName(k string) bool {
 	return strings.Contains(uk, "TOKEN") || strings.Contains(uk, "KEY") || strings.Contains(uk, "SECRET") ||
 		strings.Contains(uk, "PASS") || strings.Contains(uk, "API") || strings.Contains(uk, "HF_") ||
 		strings.Contains(uk, "AUTH")
+}
+
+// LooksLikeSecretValue reports whether a value matches a known secret
+// pattern. Returns the pattern name if matched, empty string otherwise.
+// The actual value is never stored in findings.
+func LooksLikeSecretValue(v string) string {
+	if v == "" || v == "changeme" || v == "TODO" || v == "placeholder" {
+		return ""
+	}
+	prefixes := []struct {
+		prefix  string
+		pattern string
+	}{
+		{"sk-", "sk- prefix (OpenAI/Stripe)"},
+		{"sk_live_", "sk_live_ prefix (Stripe live)"},
+		{"rk_live_", "rk_live_ prefix (Stripe restricted)"},
+		{"pk_live_", "pk_live_ prefix (Stripe publishable)"},
+		{"ghp_", "ghp_ prefix (GitHub PAT)"},
+		{"ghs_", "ghs_ prefix (GitHub App)"},
+		{"gho_", "gho_ prefix (GitHub OAuth)"},
+		{"github_pat_", "github_pat_ prefix"},
+		{"glpat-", "glpat- prefix (GitLab PAT)"},
+		{"xoxb-", "xoxb- prefix (Slack bot)"},
+		{"xoxp-", "xoxp- prefix (Slack user)"},
+		{"xapp-", "xapp- prefix (Slack app)"},
+		{"AKIA", "AKIA prefix (AWS access key)"},
+		{"whsec_", "whsec_ prefix (webhook secret)"},
+		{"hf_", "hf_ prefix (Hugging Face)"},
+		{"eyJ", "eyJ prefix (JWT/base64 token)"},
+		{"shpat_", "shpat_ prefix (Shopify)"},
+		{"sq0atp-", "sq0atp- prefix (Square)"},
+		{"SG.", "SG. prefix (SendGrid)"},
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(v, p.prefix) {
+			return p.pattern
+		}
+	}
+	if isHexString(v) && len(v) >= 32 {
+		return "hex string >=32 chars"
+	}
+	if isBase64Like(v) && len(v) >= 20 {
+		return "base64-like string >=20 chars"
+	}
+	return ""
+}
+
+func isHexString(s string) bool {
+	if len(s) < 32 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func isBase64Like(s string) bool {
+	if len(s) < 20 {
+		return false
+	}
+	alphaNum := 0
+	for _, c := range s {
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=' || c == '-' || c == '_' {
+			if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+				alphaNum++
+			}
+		} else {
+			return false
+		}
+	}
+	return float64(alphaNum)/float64(len(s)) > 0.7
 }
 
 func dedup(ss []string) []string {
