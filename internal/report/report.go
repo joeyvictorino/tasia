@@ -122,6 +122,131 @@ func FindingsToJSON(findings []rules.Finding, decision, risk string) (string, er
 	return string(b), err
 }
 
+// FindingsToSARIF produces a SARIF v2.1.0 JSON log suitable for upload to
+// GitHub Code Scanning (via github/codeql-action/upload-sarif).
+func FindingsToSARIF(findings []rules.Finding, version string) (string, error) {
+	type sarifMessage struct {
+		Text string `json:"text"`
+	}
+	type sarifArtifactLocation struct {
+		URI string `json:"uri"`
+	}
+	type sarifRegion struct {
+		StartLine int `json:"startLine,omitempty"`
+	}
+	type sarifPhysicalLocation struct {
+		ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
+		Region           *sarifRegion          `json:"region,omitempty"`
+	}
+	type sarifLocation struct {
+		PhysicalLocation sarifPhysicalLocation `json:"physicalLocation"`
+	}
+	type sarifResult struct {
+		RuleID    string          `json:"ruleId"`
+		Level     string          `json:"level"`
+		Message   sarifMessage    `json:"message"`
+		Locations []sarifLocation `json:"locations"`
+	}
+	type sarifHelp struct {
+		Text string `json:"text"`
+	}
+	type sarifShortDesc struct {
+		Text string `json:"text"`
+	}
+	type sarifRule struct {
+		ID               string         `json:"id"`
+		ShortDescription sarifShortDesc `json:"shortDescription"`
+		Help             sarifHelp      `json:"help"`
+	}
+	type sarifDriver struct {
+		Name           string      `json:"name"`
+		Version        string      `json:"version"`
+		InformationURI string      `json:"informationUri"`
+		Rules          []sarifRule `json:"rules"`
+	}
+	type sarifTool struct {
+		Driver sarifDriver `json:"driver"`
+	}
+	type sarifRun struct {
+		Tool    sarifTool     `json:"tool"`
+		Results []sarifResult `json:"results"`
+	}
+	type sarifLog struct {
+		Schema  string     `json:"$schema"`
+		Version string     `json:"version"`
+		Runs    []sarifRun `json:"runs"`
+	}
+
+	ruleSet := map[string]bool{}
+	var ruleList []sarifRule
+	var results []sarifResult
+
+	for _, f := range findings {
+		if !ruleSet[f.ID] {
+			ruleSet[f.ID] = true
+			ruleList = append(ruleList, sarifRule{
+				ID:               f.ID,
+				ShortDescription: sarifShortDesc{Text: f.Title},
+				Help:             sarifHelp{Text: f.Why + "\n\nFix: " + f.Fix},
+			})
+		}
+
+		loc := sarifLocation{
+			PhysicalLocation: sarifPhysicalLocation{
+				ArtifactLocation: sarifArtifactLocation{URI: f.File},
+			},
+		}
+		if f.Line > 0 {
+			loc.PhysicalLocation.Region = &sarifRegion{StartLine: f.Line}
+		}
+
+		results = append(results, sarifResult{
+			RuleID:    f.ID,
+			Level:     severityToSARIF(f.Severity),
+			Message:   sarifMessage{Text: f.Evidence},
+			Locations: []sarifLocation{loc},
+		})
+	}
+
+	if version == "" {
+		version = "dev"
+	}
+
+	log := sarifLog{
+		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+		Version: "2.1.0",
+		Runs: []sarifRun{{
+			Tool: sarifTool{
+				Driver: sarifDriver{
+					Name:           "tasia",
+					Version:        version,
+					InformationURI: "https://github.com/joeyvictorino/tasia",
+					Rules:          ruleList,
+				},
+			},
+			Results: results,
+		}},
+	}
+
+	b, err := json.MarshalIndent(log, "", "  ")
+	return string(b), err
+}
+
+func severityToSARIF(s rules.Severity) string {
+	switch s {
+	case rules.SeverityCritical:
+		return "error"
+	case rules.SeverityHigh:
+		return "error"
+	case rules.SeverityMedium:
+		return "warning"
+	case rules.SeverityLow:
+		return "note"
+	default:
+		return "note"
+	}
+}
+
 // WriteArtifacts creates the full .tasia/ pack.
 func WriteArtifacts(outDir string, c *collect.Collected, findings []rules.Finding, decision, risk string) error {
 	// HARDENING_PLAN.md

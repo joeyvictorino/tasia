@@ -148,6 +148,118 @@ func TestWriteArtifactsGolden(t *testing.T) {
 	}
 }
 
+func TestFindingsToSARIF(t *testing.T) {
+	fs := []rules.Finding{
+		{ID: "exposed_inference", Severity: "HIGH", Title: "Inference API published to all interfaces", File: "docker-compose.yml", Line: 5, Evidence: "port=11434:11434", Why: "The inference API may be reachable", Fix: "Bind to 127.0.0.1"},
+		{ID: "exposed_vector", Severity: "MEDIUM", Title: "Vector DB published to host", File: "docker-compose.yml", Line: 12, Evidence: "port=6333:6333", Why: "Vector DB", Fix: "Use internal net"},
+		{ID: "exposed_inference", Severity: "HIGH", Title: "Inference API published to all interfaces", File: "compose2.yml", Line: 3, Evidence: "port=11434:11434", Why: "dup", Fix: "dup"},
+	}
+	out, err := FindingsToSARIF(fs, "0.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sarif struct {
+		Schema  string `json:"$schema"`
+		Version string `json:"version"`
+		Runs    []struct {
+			Tool struct {
+				Driver struct {
+					Name    string `json:"name"`
+					Version string `json:"version"`
+					Rules   []struct {
+						ID string `json:"id"`
+					} `json:"rules"`
+				} `json:"driver"`
+			} `json:"tool"`
+			Results []struct {
+				RuleID    string `json:"ruleId"`
+				Level     string `json:"level"`
+				Locations []struct {
+					PhysicalLocation struct {
+						ArtifactLocation struct {
+							URI string `json:"uri"`
+						} `json:"artifactLocation"`
+						Region *struct {
+							StartLine int `json:"startLine"`
+						} `json:"region"`
+					} `json:"physicalLocation"`
+				} `json:"locations"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(out), &sarif); err != nil {
+		t.Fatalf("SARIF is not valid JSON: %v\n%s", err, out)
+	}
+	if sarif.Version != "2.1.0" {
+		t.Errorf("version = %q, want 2.1.0", sarif.Version)
+	}
+	if !strings.Contains(sarif.Schema, "sarif-schema-2.1.0") {
+		t.Errorf("$schema missing sarif-schema-2.1.0: %q", sarif.Schema)
+	}
+	if len(sarif.Runs) != 1 {
+		t.Fatalf("runs = %d, want 1", len(sarif.Runs))
+	}
+	run := sarif.Runs[0]
+	if run.Tool.Driver.Name != "tasia" {
+		t.Errorf("driver name = %q", run.Tool.Driver.Name)
+	}
+	if run.Tool.Driver.Version != "0.1.0" {
+		t.Errorf("driver version = %q", run.Tool.Driver.Version)
+	}
+	// Two distinct rule IDs (exposed_inference deduped)
+	if len(run.Tool.Driver.Rules) != 2 {
+		t.Errorf("rules = %d, want 2", len(run.Tool.Driver.Rules))
+	}
+	// Three results (one per finding)
+	if len(run.Results) != 3 {
+		t.Fatalf("results = %d, want 3", len(run.Results))
+	}
+	// HIGH maps to error, MEDIUM maps to warning
+	if run.Results[0].Level != "error" {
+		t.Errorf("HIGH -> %q, want error", run.Results[0].Level)
+	}
+	if run.Results[1].Level != "warning" {
+		t.Errorf("MEDIUM -> %q, want warning", run.Results[1].Level)
+	}
+	// Location includes line number
+	if run.Results[0].Locations[0].PhysicalLocation.Region == nil || run.Results[0].Locations[0].PhysicalLocation.Region.StartLine != 5 {
+		t.Errorf("first result location wrong: %+v", run.Results[0].Locations)
+	}
+}
+
+func TestSARIFEmptyFindings(t *testing.T) {
+	out, err := FindingsToSARIF(nil, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"results": null`) && !strings.Contains(out, `"results":null`) {
+		// null is fine for empty results in SARIF
+	}
+	if !strings.Contains(out, `"version": "2.1.0"`) {
+		t.Errorf("empty SARIF missing version")
+	}
+}
+
+func TestSeverityToSARIFMapping(t *testing.T) {
+	cases := []struct {
+		sev  rules.Severity
+		want string
+	}{
+		{rules.SeverityCritical, "error"},
+		{rules.SeverityHigh, "error"},
+		{rules.SeverityMedium, "warning"},
+		{rules.SeverityLow, "note"},
+	}
+	for _, tc := range cases {
+		fs := []rules.Finding{{ID: "test", Severity: tc.sev, Title: "t", File: "f.yml", Line: 1, Evidence: "e", Why: "w", Fix: "f"}}
+		out, _ := FindingsToSARIF(fs, "dev")
+		if !strings.Contains(out, `"level": "`+tc.want+`"`) {
+			t.Errorf("%s: expected level %q in output", tc.sev, tc.want)
+		}
+	}
+}
+
 func TestErrorJSONIsValidFailClosed(t *testing.T) {
 	out := ErrorJSON([]collect.ConfigError{{Path: "docker-compose.yml", Err: "yaml: line 2: bad"}})
 	var parsed struct {

@@ -81,7 +81,7 @@ func printUsage() {
 	fmt.Println(`Tasia — private AI stack hardening gate
 
 Usage:
-  tasia review [--path .] [--format text|json] [--fail-on critical|high|medium|low] [--no-write] [--strict]
+  tasia review [--path .] [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict]
   tasia ci [--path .] [--fail-on critical|high|medium|low]
   tasia install --pre-push
   tasia uninstall --pre-push
@@ -95,7 +95,7 @@ Review local/private AI deployment configs, block risky patterns, generate harde
 func runReview(args []string) error {
 	fs := flag.NewFlagSet("review", flag.ContinueOnError)
 	path := fs.String("path", ".", "path to scan")
-	format := fs.String("format", "text", "output format: text or json")
+	format := fs.String("format", "text", "output format: text, json or sarif")
 	failOn := fs.String("fail-on", "", "fail level: critical, high, medium, low")
 	noWrite := fs.Bool("no-write", false, "do not write .tasia/ artifacts")
 	strict := fs.Bool("strict", false, "treat warnings as blocking too")
@@ -120,9 +120,13 @@ func runReview(args []string) error {
 	// Fail closed: an unparseable config cannot be vouched for. Report ERROR,
 	// write nothing, and exit 2 rather than a misleading PASS.
 	if len(collected.ParseErrors) > 0 {
-		if *format == "json" {
+		switch *format {
+		case "json":
 			fmt.Println(report.ErrorJSON(collected.ParseErrors))
-		} else {
+		case "sarif":
+			out, _ := report.FindingsToSARIF(nil, versionString())
+			fmt.Println(out)
+		default:
 			report.PrintErrorVerdict(collected.ParseErrors)
 		}
 		os.Exit(2)
@@ -147,14 +151,21 @@ func runReview(args []string) error {
 		wrotePath = outDir
 	}
 
-	// Terminal (json must be pure on stdout)
-	if *format == "json" {
+	// Terminal (json/sarif must be pure on stdout)
+	switch *format {
+	case "json":
 		out, _ := report.FindingsToJSON(findings, decision, risk)
 		fmt.Println(out)
 		if wrotePath != "" {
 			fmt.Fprintf(os.Stderr, "Wrote .tasia/ hardening pack to %s\n", wrotePath)
 		}
-	} else {
+	case "sarif":
+		out, _ := report.FindingsToSARIF(findings, versionString())
+		fmt.Println(out)
+		if wrotePath != "" {
+			fmt.Fprintf(os.Stderr, "Wrote .tasia/ hardening pack to %s\n", wrotePath)
+		}
+	default:
 		report.PrintSummary(findings, decision, risk)
 		if wrotePath != "" {
 			fmt.Printf("\nWrote .tasia/ hardening pack to %s\n", wrotePath)
