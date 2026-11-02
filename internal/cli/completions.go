@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix report compare fmt migrate install uninstall explain rules schema init watch profile completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate install uninstall explain rules schema init watch profile completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -67,6 +67,8 @@ _tasia() {
         'profile:Aggregate security profile'
         'report:Generate standalone HTML security report'
         'compare:Compare findings across multiple projects'
+        'export:Export findings as CSV, Markdown, or JUnit XML'
+        'validate:Check config files for errors'
         'fmt:Format and normalize .tasiarc.yaml'
         'migrate:Upgrade config to latest schema'
         'completions:Generate shell completions'
@@ -120,6 +122,18 @@ _tasia() {
                         '--paths[comma-separated directories]' \
                         '--format[output format]:(text json)'
                     ;;
+                export)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(csv markdown junit)' \
+                        '--output[output file]:file:_files' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                validate)
+                    _arguments \
+                        '--path[directory with config files]:directory:_directories' \
+                        '--format[output format]:(text json)'
+                    ;;
                 fmt)
                     _arguments \
                         '--path[config file]:file:_files' \
@@ -155,6 +169,8 @@ complete -c tasia -n '__fish_use_subcommand' -a 'watch' -d 'Watch for config cha
 complete -c tasia -n '__fish_use_subcommand' -a 'profile' -d 'Aggregate security profile'
 complete -c tasia -n '__fish_use_subcommand' -a 'report' -d 'Generate standalone HTML security report'
 complete -c tasia -n '__fish_use_subcommand' -a 'compare' -d 'Compare findings across multiple projects'
+complete -c tasia -n '__fish_use_subcommand' -a 'export' -d 'Export findings as CSV, Markdown, or JUnit XML'
+complete -c tasia -n '__fish_use_subcommand' -a 'validate' -d 'Check config files for errors'
 complete -c tasia -n '__fish_use_subcommand' -a 'fmt' -d 'Format and normalize .tasiarc.yaml'
 complete -c tasia -n '__fish_use_subcommand' -a 'migrate' -d 'Upgrade config to latest schema'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
@@ -175,6 +191,12 @@ complete -c tasia -n '__fish_seen_subcommand_from report' -l title -d 'Report ti
 complete -c tasia -n '__fish_seen_subcommand_from report' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from compare' -l paths -d 'Comma-separated directories'
 complete -c tasia -n '__fish_seen_subcommand_from compare' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from export' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from export' -l format -d 'Output format' -r -a 'csv markdown junit'
+complete -c tasia -n '__fish_seen_subcommand_from export' -l output -d 'Output file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from export' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from validate' -l path -d 'Directory with config files' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from validate' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from fmt' -l path -d 'Config file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from fmt' -l check -d 'Exit 1 if file would change'
 complete -c tasia -n '__fish_seen_subcommand_from fmt' -l diff -d 'Show what would change'
