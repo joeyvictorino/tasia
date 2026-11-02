@@ -268,6 +268,8 @@ func Run(args []string) error {
 		return runEgressMap(args[1:])
 	case "service-mesh":
 		return runServiceMesh(args[1:])
+	case "service-dep":
+		return runServiceDep(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
