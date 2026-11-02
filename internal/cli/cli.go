@@ -224,6 +224,10 @@ func Run(args []string) error {
 		return runStopGrace(args[1:])
 	case "shm-size":
 		return runShmSize(args[1:])
+	case "workdir":
+		return runWorkdir(args[1:])
+	case "copy-add":
+		return runCopyAdd(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

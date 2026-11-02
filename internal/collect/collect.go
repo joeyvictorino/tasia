@@ -225,12 +225,47 @@ type Dockerfile struct {
 	UserLine int
 	// Exposes lists EXPOSE directives with their port strings and lines.
 	Exposes []DockerfileExpose
+	// Entrypoint is the ENTRYPOINT directive (shell or exec form).
+	Entrypoint     string
+	EntrypointLine int
+	EntrypointExec bool // true if exec form (JSON array)
+	// Cmd is the CMD directive (shell or exec form).
+	Cmd     string
+	CmdLine int
+	CmdExec bool
+	// Args lists ARG directives.
+	Args []DockerfileArg
+	// Workdirs lists WORKDIR directives.
+	Workdirs []DockerfileWorkdir
+	// Adds lists ADD directives.
+	Adds []DockerfileAdd
 }
 
 // DockerfileExpose records one EXPOSE directive.
 type DockerfileExpose struct {
 	Ports string // the raw port list, e.g. "8080 443/tcp"
 	Line  int
+}
+
+// DockerfileArg records one ARG directive.
+type DockerfileArg struct {
+	Name         string
+	DefaultValue string // "" if no default
+	Line         int
+}
+
+// DockerfileWorkdir records one WORKDIR directive.
+type DockerfileWorkdir struct {
+	Path string
+	Line int
+}
+
+// DockerfileAdd records one ADD directive.
+type DockerfileAdd struct {
+	Source string
+	Dest   string
+	Line   int
+	IsURL  bool
 }
 
 // ParseDockerfile extracts security-relevant directives from Dockerfile content.
@@ -248,6 +283,47 @@ func ParseDockerfile(path, content string) Dockerfile {
 				Ports: strings.TrimSpace(trimmed[7:]),
 				Line:  i + 1,
 			})
+		}
+		if strings.HasPrefix(upper, "ENTRYPOINT ") {
+			raw := strings.TrimSpace(trimmed[11:])
+			df.Entrypoint = raw
+			df.EntrypointLine = i + 1
+			df.EntrypointExec = strings.HasPrefix(raw, "[")
+		}
+		if strings.HasPrefix(upper, "CMD ") {
+			raw := strings.TrimSpace(trimmed[4:])
+			df.Cmd = raw
+			df.CmdLine = i + 1
+			df.CmdExec = strings.HasPrefix(raw, "[")
+		}
+		if strings.HasPrefix(upper, "ARG ") {
+			argStr := strings.TrimSpace(trimmed[4:])
+			arg := DockerfileArg{Line: i + 1}
+			if idx := strings.Index(argStr, "="); idx >= 0 {
+				arg.Name = argStr[:idx]
+				arg.DefaultValue = argStr[idx+1:]
+			} else {
+				arg.Name = argStr
+			}
+			df.Args = append(df.Args, arg)
+		}
+		if strings.HasPrefix(upper, "WORKDIR ") {
+			df.Workdirs = append(df.Workdirs, DockerfileWorkdir{
+				Path: strings.TrimSpace(trimmed[8:]),
+				Line: i + 1,
+			})
+		}
+		if strings.HasPrefix(upper, "ADD ") {
+			parts := strings.Fields(trimmed[4:])
+			add := DockerfileAdd{Line: i + 1}
+			if len(parts) >= 2 {
+				add.Source = parts[0]
+				add.Dest = parts[len(parts)-1]
+				add.IsURL = strings.HasPrefix(parts[0], "http://") || strings.HasPrefix(parts[0], "https://")
+			} else if len(parts) == 1 {
+				add.Source = parts[0]
+			}
+			df.Adds = append(df.Adds, add)
 		}
 	}
 	return df
