@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -132,6 +132,8 @@ _tasia() {
         'copy-add:Audit Dockerfile ADD directives'
         'privileged:Detect privileged mode and capability escalation'
         'workload:Classify container workloads by type'
+        'attack-surface:Cross-service attack surface scoring'
+        'compose-lint:Docker-compose best practice linting'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -483,6 +485,8 @@ complete -c tasia -n '__fish_use_subcommand' -a 'lint' -d 'Check config files fo
 complete -c tasia -n '__fish_use_subcommand' -a 'doctor' -d 'Check environment readiness'
 complete -c tasia -n '__fish_use_subcommand' -a 'compliance' -d 'Map findings to compliance frameworks'
 complete -c tasia -n '__fish_use_subcommand' -a 'coverage' -d 'Show rule coverage report'
+complete -c tasia -n '__fish_use_subcommand' -a 'attack-surface' -d 'Cross-service attack surface scoring'
+complete -c tasia -n '__fish_use_subcommand' -a 'compose-lint' -d 'Docker-compose best practice linting'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'

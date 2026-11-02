@@ -234,6 +234,10 @@ func Run(args []string) error {
 		return runWorkload(args[1:])
 	case "image-trust":
 		return runImageTrust(args[1:])
+	case "attack-surface":
+		return runAttacksurf(args[1:])
+	case "compose-lint":
+		return runComposeLint(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
