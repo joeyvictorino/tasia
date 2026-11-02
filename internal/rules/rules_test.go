@@ -466,6 +466,62 @@ func TestAgentSharedSecrets(t *testing.T) {
 	}
 }
 
+func TestAgentAutoApproveDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "n8n", Image: "n8nio/n8n:1.60", EnvLine: 3,
+					Environment: []string{"N8N_ALLOW_EXEC=true", "N8N_PORT=5678"}},
+				{Name: "flowise", Image: "flowiseai/flowise:2.1", EnvLine: 8,
+					Environment: []string{"FLOWISE_ALLOW_CODE_EXEC=true", "PORT=3000"}},
+				// non-agent service with auto-approve key: should NOT be flagged
+				{Name: "app", Image: "myorg/app:1.2", EnvLine: 12,
+					Environment: []string{"AUTO_APPROVE=true"}},
+			},
+		}},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "agent_auto_approve" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 2 {
+		t.Fatalf("expected 2 agent_auto_approve findings (n8n + flowise), got %d: %+v", len(found), found)
+	}
+	for _, f := range found {
+		if f.Severity != SeverityHigh {
+			t.Errorf("agent_auto_approve should be HIGH, got %s", f.Severity)
+		}
+	}
+	// Check evidence doesn't leak values, only key names
+	for _, f := range found {
+		if strings.Contains(f.Evidence, "true") && !strings.Contains(f.Evidence, "key=") {
+			t.Errorf("evidence might contain the value: %s", f.Evidence)
+		}
+	}
+}
+
+func TestAgentAutoApproveNotFlaggedOnNonAgent(t *testing.T) {
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "app", Image: "myorg/app:1.2", EnvLine: 3,
+					Environment: []string{"AUTO_APPROVE=true", "ENABLE_CODE_EXECUTION=yes"}},
+			},
+		}},
+	}
+	for _, f := range Evaluate(c) {
+		if f.ID == "agent_auto_approve" {
+			t.Errorf("auto-approve on a non-agent service should not be flagged: %+v", f)
+		}
+	}
+}
+
 func TestDatastoreEscalatesAlongsideAgentRuntime(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",

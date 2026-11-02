@@ -11,6 +11,7 @@ services:
       - .:/data
     environment:
       - N8N_ENCRYPTION_KEY=replace-me
+      - N8N_ALLOW_EXEC=true
   ollama:
     image: ollama/ollama:0.3.12
     ports:

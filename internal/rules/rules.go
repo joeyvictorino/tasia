@@ -99,6 +99,7 @@ func evaluateService(relCompose string, svc compose.Service, stackHasAI bool) []
 	out = append(out, dockerSocketFindings(svc, relCompose, isAgent)...)
 	out = append(out, broadBindMountFindings(svc, relCompose, isAgent)...)
 	out = append(out, environmentFindings(svc, relCompose)...)
+	out = append(out, agentAutoApproveFindings(svc, relCompose)...)
 
 	return out
 }
@@ -274,6 +275,56 @@ func broadBindMountFindings(svc compose.Service, relCompose string, isAgent bool
 			f.Fix = "Mount inputs read-only (:ro) and give the agent a separate, narrow writable workspace. Keep test data and check scripts outside anything the agent can write."
 		}
 		out = append(out, f)
+	}
+	return out
+}
+
+// agentAutoApproveKey maps environment variable key names (upper-cased) to a
+// human-readable description of the danger. Each key is a setting that, when
+// enabled, lets an agent runtime execute code or approve its own actions
+// without human oversight. Only the key name is emitted — values are never
+// stored in findings.
+var agentAutoApproveKeys = map[string]string{
+	"N8N_ALLOW_EXEC":              "n8n code-execution node is enabled",
+	"FLOWISE_ALLOW_CODE_EXEC":     "Flowise code execution is enabled",
+	"SANDBOX_ENABLED":             "sandbox toggle (may disable sandboxing when false)",
+	"AUTO_APPROVE":                "agent auto-approve is enabled",
+	"AUTO_APPROVE_TOOLS":          "agent tool auto-approval is enabled",
+	"OPENHANDS_AUTO_APPROVE":      "OpenHands auto-approve is enabled",
+	"INTERPRETER_AUTO_APPROVE":    "Open Interpreter auto-approve is enabled",
+	"ALLOW_ARBITRARY_CODE":        "arbitrary code execution is allowed",
+	"ENABLE_CODE_EXECUTION":       "code execution is explicitly enabled",
+	"LANGFLOW_AUTO_LOGIN":         "Langflow auto-login bypasses authentication",
+	"N8N_BASIC_AUTH_ACTIVE":       "n8n basic auth toggle (dangerous when false)",
+	"DIFY_SANDBOX_ENABLE":         "Dify sandbox toggle (dangerous when false)",
+}
+
+// agentAutoApproveFindings flags agent-runtime services that set dangerous
+// auto-approve or auto-execute environment variables. Only agent runtimes are
+// checked — these settings on other services are not flagged.
+func agentAutoApproveFindings(svc compose.Service, relCompose string) []Finding {
+	if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+		return nil
+	}
+	var out []Finding
+	for _, entry := range svc.Environment {
+		key, _, _ := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		upper := strings.ToUpper(key)
+		desc, flagged := agentAutoApproveKeys[upper]
+		if !flagged {
+			continue
+		}
+		out = append(out, Finding{
+			ID:       "agent_auto_approve",
+			Severity: SeverityHigh,
+			Title:    fmt.Sprintf("agent runtime sets %s", key),
+			File:     relCompose,
+			Line:     svc.EnvLine,
+			Evidence: fmt.Sprintf("service=%s key=%s (%s)", svc.Name, key, desc),
+			Why:      "Auto-approve and code-execution settings on an agent runtime let model-written code run without human review. A compromised or confused model can then take destructive actions with whatever credentials the runtime holds.",
+			Fix:      "Remove the setting or set it to the safe default. Require human approval for tool execution and code runs.",
+		})
 	}
 	return out
 }
