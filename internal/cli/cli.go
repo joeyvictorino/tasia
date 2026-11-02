@@ -244,6 +244,10 @@ func Run(args []string) error {
 		return runImageAge(args[1:])
 	case "layer-audit":
 		return runLayerAudit(args[1:])
+	case "multi-stage":
+		return runMultistage(args[1:])
+	case "build-cache":
+		return runBuildCache(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -334,6 +338,8 @@ Usage:
   tasia image-trust [--path .] [--format text|json] [--recursive]
   tasia service-map [--path .] [--format text|json|dot] [--recursive]
   tasia image-age [--path .] [--format text|json] [--recursive]
+  tasia multi-stage [--path .] [--format text|json] [--recursive]
+  tasia build-cache [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
