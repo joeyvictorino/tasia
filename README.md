@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*` and Dockerfile files, applies 21 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
+Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*` and Dockerfile files, applies 22 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -116,7 +116,7 @@ tasia version
 flowchart LR
   F["compose, .env*, Dockerfile files"] --> C["collect: walk tree, parse YAML nodes, record env key names"]
   C -- "unparseable file" --> X["Decision ERROR, exit 2"]
-  C --> R["rules: 12 deterministic checks"]
+  C --> R["rules: 22 deterministic checks"]
   R --> D["report: Decide PASS or BLOCKED"]
   D --> T["terminal summary or JSON"]
   D --> P[".tasia/ hardening pack"]
