@@ -118,8 +118,12 @@ type Service struct {
 	TtyLine           int
 	Init              bool
 	InitLine          int
+	StopSignal        string
+	StopSignalLine    int
 	StopGracePeriod   string
 	StopGracePeriodLine int
+	ShmSize           string
+	ShmSizeLine       int
 	Runtime           string
 	RuntimeLine       int
 }
@@ -682,11 +686,23 @@ func Parse(path string) (*File, error) {
 				svc.Init = true
 				svc.InitLine = initNode.Line
 			}
+			// stop_signal
+			ssNode := getMapValue(svcNode, "stop_signal")
+			if ssNode != nil {
+				svc.StopSignal = strings.Trim(ssNode.Value, `"' `)
+				svc.StopSignalLine = ssNode.Line
+			}
 			// stop_grace_period
 			sgpNode := getMapValue(svcNode, "stop_grace_period")
 			if sgpNode != nil {
 				svc.StopGracePeriod = strings.Trim(sgpNode.Value, `"' `)
 				svc.StopGracePeriodLine = sgpNode.Line
+			}
+			// shm_size
+			shmNode := getMapValue(svcNode, "shm_size")
+			if shmNode != nil {
+				svc.ShmSize = strings.Trim(shmNode.Value, `"' `)
+				svc.ShmSizeLine = shmNode.Line
 			}
 			// runtime
 			rtNode := getMapValue(svcNode, "runtime")

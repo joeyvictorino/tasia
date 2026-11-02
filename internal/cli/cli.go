@@ -220,6 +220,10 @@ func Run(args []string) error {
 		return runOom(args[1:])
 	case "restart-policy":
 		return runRestartPolicy(args[1:])
+	case "stop-grace":
+		return runStopGrace(args[1:])
+	case "shm-size":
+		return runShmSize(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
