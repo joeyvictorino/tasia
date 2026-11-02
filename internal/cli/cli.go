@@ -130,6 +130,10 @@ func Run(args []string) error {
 		return runPolicy(args[1:])
 	case "audit-trail":
 		return runAuditTrail(args[1:])
+	case "network":
+		return runNetwork(args[1:])
+	case "secrets-scan":
+		return runSecretsScan(args[1:])
 	case "snapshot":
 		return runSnapshot(args[1:])
 	case "drift":

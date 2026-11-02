@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -83,6 +83,8 @@ _tasia() {
         'drift:Compare two security snapshots'
         'policy:Generate security policy document from scan results'
         'audit-trail:Manage append-only scan history log'
+        'network:Analyze Docker network security topology'
+        'secrets-scan:Deep secret detection across config files'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -235,6 +237,20 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
+                network)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json dot)' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                secrets-scan)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]' \
+                        '--type[filter by secret type]:(api_key password token certificate connection_string)' \
+                        '--min-severity[minimum severity]:(critical high medium low)'
+                    ;;
             esac
             ;;
     esac
@@ -346,6 +362,16 @@ complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l path -d 'Path 
 complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l trail -d 'Audit trail file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from audit-trail' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'network' -d 'Analyze Docker network security topology'
+complete -c tasia -n '__fish_use_subcommand' -a 'secrets-scan' -d 'Deep secret detection across config files'
+complete -c tasia -n '__fish_seen_subcommand_from network' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from network' -l format -d 'Output format' -r -a 'text json dot'
+complete -c tasia -n '__fish_seen_subcommand_from network' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from secrets-scan' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from secrets-scan' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from secrets-scan' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from secrets-scan' -l type -d 'Filter by secret type' -r -a 'api_key password token certificate connection_string'
+complete -c tasia -n '__fish_seen_subcommand_from secrets-scan' -l min-severity -d 'Minimum severity' -r -a 'critical high medium low'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
