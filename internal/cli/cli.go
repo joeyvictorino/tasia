@@ -258,6 +258,8 @@ func Run(args []string) error {
 		return runReadonlyFS(args[1:])
 	case "env-leak":
 		return runEnvLeak(args[1:])
+	case "egress":
+		return runEgress(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
