@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci install uninstall explain rules schema init watch profile completions version help"
+    commands="review diff check ci fix install uninstall explain rules schema init watch profile completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -63,6 +63,7 @@ _tasia() {
         'schema:Print JSON Schema for findings'
         'init:Generate starter config'
         'watch:Watch for config changes'
+        'fix:Show auto-remediation suggestions'
         'profile:Aggregate security profile'
         'completions:Generate shell completions'
         'version:Show version info'
@@ -116,6 +117,7 @@ complete -c tasia -n '__fish_use_subcommand' -a 'review' -d 'Review AI stack dep
 complete -c tasia -n '__fish_use_subcommand' -a 'diff' -d 'Compare two config directories'
 complete -c tasia -n '__fish_use_subcommand' -a 'check' -d 'Quick pass/fail CI check'
 complete -c tasia -n '__fish_use_subcommand' -a 'ci' -d 'CI mode with exit codes'
+complete -c tasia -n '__fish_use_subcommand' -a 'fix' -d 'Show auto-remediation suggestions'
 complete -c tasia -n '__fish_use_subcommand' -a 'install' -d 'Install git hooks'
 complete -c tasia -n '__fish_use_subcommand' -a 'uninstall' -d 'Remove git hooks'
 complete -c tasia -n '__fish_use_subcommand' -a 'explain' -d 'AI-powered finding explanations'
@@ -128,7 +130,7 @@ complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'
 
-complete -c tasia -n '__fish_seen_subcommand_from review check ci explain init watch profile' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from review check ci fix explain init watch profile' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from review check ci' -l fail-on -d 'Failure threshold' -r -a 'critical high medium low'
 complete -c tasia -n '__fish_seen_subcommand_from review check' -l format -d 'Output format' -r -a 'text json sarif'
 complete -c tasia -n '__fish_seen_subcommand_from review check ci' -l verbose -d 'Show detailed output'

@@ -58,6 +58,8 @@ func Run(args []string) error {
 		return runCheck(args[1:])
 	case "ci":
 		return runCI(args[1:])
+	case "fix":
+		return runFix(args[1:])
 	case "install":
 		return runInstall(args[1:])
 	case "uninstall":
@@ -74,7 +76,7 @@ func Run(args []string) error {
 		return runWatch(args[1:])
 	case "profile":
 		return runProfile(args[1:])
-	case "completions":
+	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
@@ -109,6 +111,7 @@ Usage:
   tasia review [--path .] [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict] [--recursive]
   tasia check [--path .] [--fail-on critical|high|medium|low] [--format text|json] [--recursive]
   tasia ci [--path .] [--fail-on critical|high|medium|low] [--recursive]
+  tasia fix [--path .] [--format text|json] [--recursive]
   tasia install --pre-push
   tasia uninstall --pre-push
   tasia explain [--path .] [--ollama llama3.1] [--ollama-host localhost:11434]
