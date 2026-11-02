@@ -462,7 +462,7 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
-                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|layer-trust|service-map|image-age|layer-audit|multi-stage|build-cache|readonly-fs|env-leak|proc-ns|readonly-root|compose-validate|port-conflict|volume-audit|uts-ns|cgroupv2)
+                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|layer-trust|service-map|image-age|layer-audit|multi-stage|build-cache|readonly-fs|env-leak|proc-ns|readonly-root|compose-validate|port-conflict|volume-audit|uts-ns|cgroupv2|ipc-ns|net-ns)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
                         '--format[output format]:(text json)' \
@@ -844,6 +844,14 @@ complete -c tasia -n '__fish_use_subcommand' -a 'cgroupv2' -d 'Cgroup v2 migrati
 complete -c tasia -n '__fish_seen_subcommand_from cgroupv2' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from cgroupv2' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from cgroupv2' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'ipc-ns' -d 'IPC namespace sharing audit'
+complete -c tasia -n '__fish_seen_subcommand_from ipc-ns' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from ipc-ns' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from ipc-ns' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'net-ns' -d 'Network namespace isolation audit'
+complete -c tasia -n '__fish_seen_subcommand_from net-ns' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from net-ns' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from net-ns' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
