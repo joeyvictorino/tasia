@@ -344,6 +344,8 @@ func Run(args []string) error {
 		return runLogsecrets(args[1:])
 	case "socketperm":
 		return runSocketperm(args[1:])
+	case "pullpolicy":
+		return runPullpolicy(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
