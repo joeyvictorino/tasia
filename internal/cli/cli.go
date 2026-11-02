@@ -366,6 +366,10 @@ func Run(args []string) error {
 		return runGpupass(args[1:])
 	case "compose-network":
 		return runComposenet(args[1:])
+	case "registryauth":
+		return runRegistryauth(args[1:])
+	case "dnsrebind":
+		return runDnsrebind(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
