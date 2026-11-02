@@ -308,6 +308,10 @@ func Run(args []string) error {
 		return runCpuShares(args[1:])
 	case "dep-chain":
 		return runDepChain(args[1:])
+	case "image-pin":
+		return runImagePin(args[1:])
+	case "graceful":
+		return runGraceful(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
