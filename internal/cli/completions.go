@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix fmt migrate install uninstall explain rules schema init watch profile completions version help"
+    commands="review diff check ci fix report compare fmt migrate install uninstall explain rules schema init watch profile completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -65,6 +65,8 @@ _tasia() {
         'watch:Watch for config changes'
         'fix:Show auto-remediation suggestions'
         'profile:Aggregate security profile'
+        'report:Generate standalone HTML security report'
+        'compare:Compare findings across multiple projects'
         'fmt:Format and normalize .tasiarc.yaml'
         'migrate:Upgrade config to latest schema'
         'completions:Generate shell completions'
@@ -106,6 +108,18 @@ _tasia() {
                 rules)
                     _arguments '--format[output format]:(text json)'
                     ;;
+                report)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--output[output file]:file:_files' \
+                        '--title[report title]' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                compare)
+                    _arguments \
+                        '--paths[comma-separated directories]' \
+                        '--format[output format]:(text json)'
+                    ;;
                 fmt)
                     _arguments \
                         '--path[config file]:file:_files' \
@@ -139,6 +153,8 @@ complete -c tasia -n '__fish_use_subcommand' -a 'schema' -d 'Print JSON Schema f
 complete -c tasia -n '__fish_use_subcommand' -a 'init' -d 'Generate starter config'
 complete -c tasia -n '__fish_use_subcommand' -a 'watch' -d 'Watch for config changes'
 complete -c tasia -n '__fish_use_subcommand' -a 'profile' -d 'Aggregate security profile'
+complete -c tasia -n '__fish_use_subcommand' -a 'report' -d 'Generate standalone HTML security report'
+complete -c tasia -n '__fish_use_subcommand' -a 'compare' -d 'Compare findings across multiple projects'
 complete -c tasia -n '__fish_use_subcommand' -a 'fmt' -d 'Format and normalize .tasiarc.yaml'
 complete -c tasia -n '__fish_use_subcommand' -a 'migrate' -d 'Upgrade config to latest schema'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
@@ -153,6 +169,12 @@ complete -c tasia -n '__fish_seen_subcommand_from review check' -l baseline -d '
 complete -c tasia -n '__fish_seen_subcommand_from review check ci' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from diff' -l base -d 'Base directory' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from diff' -l current -d 'Current directory' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from report' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from report' -l output -d 'Output file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from report' -l title -d 'Report title'
+complete -c tasia -n '__fish_seen_subcommand_from report' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from compare' -l paths -d 'Comma-separated directories'
+complete -c tasia -n '__fish_seen_subcommand_from compare' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from fmt' -l path -d 'Config file' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from fmt' -l check -d 'Exit 1 if file would change'
 complete -c tasia -n '__fish_seen_subcommand_from fmt' -l diff -d 'Show what would change'

@@ -76,6 +76,10 @@ func Run(args []string) error {
 		return runWatch(args[1:])
 	case "profile":
 		return runProfile(args[1:])
+	case "report":
+		return runReport(args[1:])
+	case "compare":
+		return runCompare(args[1:])
 	case "fmt":
 		return runFmt(args[1:])
 	case "migrate":
@@ -123,6 +127,8 @@ Usage:
   tasia init [--path .]
   tasia watch [--path .] [--interval 2s] [--fail-on critical|high|medium|low]
   tasia profile [--path .] [--format text|json] [--recursive]
+  tasia report [--path .] [--output tasia-report.html] [--title TEXT] [--recursive]
+  tasia compare --paths DIR,DIR[,DIR,...] [--format text|json]
   tasia fmt [--path .tasiarc.yaml] [--check] [--diff]
   tasia migrate [--path .tasiarc.yaml] [--dry-run]
   tasia completions --shell bash|zsh|fish
