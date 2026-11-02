@@ -200,6 +200,10 @@ func Run(args []string) error {
 		return runSysctls(args[1:])
 	case "devices":
 		return runDevices(args[1:])
+	case "ulimits":
+		return runUlimits(args[1:])
+	case "runtime":
+		return runRuntimeAudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

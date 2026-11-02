@@ -89,6 +89,26 @@ type Service struct {
 	// Devices
 	Devices     []string
 	DevicesLine int
+	// Ulimits
+	Ulimits     map[string]UlimitValue
+	UlimitsLine int
+	// Runtime fields
+	StdinOpen         bool
+	StdinOpenLine     int
+	Tty               bool
+	TtyLine           int
+	Init              bool
+	InitLine          int
+	StopGracePeriod   string
+	StopGracePeriodLine int
+	Runtime           string
+	RuntimeLine       int
+}
+
+// UlimitValue represents a ulimit with soft and hard limits.
+type UlimitValue struct {
+	Soft int64
+	Hard int64
 }
 
 // Healthcheck represents the healthcheck block in a compose service.
@@ -485,6 +505,72 @@ func Parse(path string) (*File, error) {
 					svc.Devices = append(svc.Devices, d.Value)
 				}
 			}
+			// ulimits
+			ulimitsNode := getMapValue(svcNode, "ulimits")
+			if ulimitsNode != nil && ulimitsNode.Kind == yaml.MappingNode {
+				svc.UlimitsLine = ulimitsNode.Line
+				svc.Ulimits = map[string]UlimitValue{}
+				for j := 0; j < len(ulimitsNode.Content); j += 2 {
+					name := ulimitsNode.Content[j].Value
+					valNode := ulimitsNode.Content[j+1]
+					var uv UlimitValue
+					if valNode.Kind == yaml.MappingNode {
+						if s := getScalar(valNode, "soft"); s != "" {
+							if n, ok := atoiSafe64(s); ok {
+								uv.Soft = n
+							} else if s == "-1" || strings.ToLower(s) == "unlimited" {
+								uv.Soft = -1
+							}
+						}
+						if h := getScalar(valNode, "hard"); h != "" {
+							if n, ok := atoiSafe64(h); ok {
+								uv.Hard = n
+							} else if h == "-1" || strings.ToLower(h) == "unlimited" {
+								uv.Hard = -1
+							}
+						}
+					} else {
+						if n, ok := atoiSafe64(valNode.Value); ok {
+							uv.Soft = n
+							uv.Hard = n
+						} else if valNode.Value == "-1" || strings.ToLower(valNode.Value) == "unlimited" {
+							uv.Soft = -1
+							uv.Hard = -1
+						}
+					}
+					svc.Ulimits[name] = uv
+				}
+			}
+			// stdin_open
+			stdinNode := getMapValue(svcNode, "stdin_open")
+			if stdinNode != nil && (stdinNode.Value == "true" || stdinNode.Value == "yes") {
+				svc.StdinOpen = true
+				svc.StdinOpenLine = stdinNode.Line
+			}
+			// tty
+			ttyNode := getMapValue(svcNode, "tty")
+			if ttyNode != nil && (ttyNode.Value == "true" || ttyNode.Value == "yes") {
+				svc.Tty = true
+				svc.TtyLine = ttyNode.Line
+			}
+			// init
+			initNode := getMapValue(svcNode, "init")
+			if initNode != nil && (initNode.Value == "true" || initNode.Value == "yes") {
+				svc.Init = true
+				svc.InitLine = initNode.Line
+			}
+			// stop_grace_period
+			sgpNode := getMapValue(svcNode, "stop_grace_period")
+			if sgpNode != nil {
+				svc.StopGracePeriod = strings.Trim(sgpNode.Value, `"' `)
+				svc.StopGracePeriodLine = sgpNode.Line
+			}
+			// runtime
+			rtNode := getMapValue(svcNode, "runtime")
+			if rtNode != nil {
+				svc.Runtime = strings.Trim(rtNode.Value, `"' `)
+				svc.RuntimeLine = rtNode.Line
+			}
 			f.Services = append(f.Services, svc)
 		}
 	}
@@ -627,5 +713,10 @@ func splitPortRaw(s string) []string {
 
 func atoiSafe(s string) (int, bool) {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
+	return n, err == nil
+}
+
+func atoiSafe64(s string) (int64, bool) {
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return n, err == nil
 }
