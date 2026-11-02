@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      hostNetwork: true
+      containers:
+        - name: ollama
+          image: ollama/ollama:latest
+          securityContext:
+            privileged: true
+            runAsUser: 0
+          ports:
+            - containerPort: 11434
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: models
+              mountPath: /root/.ollama
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+        - name: models
+          hostPath:
+            path: /data/ollama-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-svc
+  namespace: ai
+spec:
+  type: LoadBalancer
+  selector:
+    app: ollama
+  ports:
+    - port: 11434
+      targetPort: 11434

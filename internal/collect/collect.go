@@ -19,6 +19,7 @@ type Collected struct {
 	EnvFiles           []EnvFile
 	Dockerfiles        []Dockerfile
 	ReverseProxyConfigs []ReverseProxyConfig
+	KubeManifests       []KubeManifest
 	OtherConfigs        []string // Modelfile etc later
 	DetectedRuntimes   []string
 	DetectedInterfaces []string
@@ -288,6 +289,14 @@ func WalkAndCollect(root string) (*Collected, error) {
 			c.OtherConfigs = append(c.OtherConfigs, rel)
 		case lower == "ai-stack-manifest.json":
 			c.HasManifest = true
+		default:
+			if strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") {
+				content, rerr := os.ReadFile(path)
+				if rerr == nil && IsKubeFile(lower, string(content)) {
+					manifests, _ := ParseKubeYAML(rel, string(content))
+					c.KubeManifests = append(c.KubeManifests, manifests...)
+				}
+			}
 		}
 		return nil
 	})

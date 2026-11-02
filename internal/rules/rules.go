@@ -68,6 +68,7 @@ func Evaluate(c *collect.Collected) []Finding {
 	findings = append(findings, envFileFindings(c.EnvFiles)...)
 	findings = append(findings, dockerfileFindings(c.Dockerfiles)...)
 	findings = append(findings, reverseProxyFindings(c.ReverseProxyConfigs)...)
+	findings = append(findings, kubeFindings(c.KubeManifests)...)
 	findings = append(findings, missingManifestFinding(c)...)
 
 	return dedupeFindings(findings)

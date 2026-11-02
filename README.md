@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile and nginx.conf files, applies 22 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
+Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile, nginx.conf and Kubernetes manifest files, applies 27 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -77,6 +77,11 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 | Dockerfile with no `USER` directive (defaults to root) | MEDIUM |
 | Dockerfile `EXPOSE` of a sensitive port (databases, SSH, Docker daemon) | MEDIUM |
 | Caddyfile or nginx reverse proxy without authentication | MEDIUM |
+| Kubernetes Service type LoadBalancer or NodePort | HIGH |
+| Kubernetes container with `privileged: true` | CRITICAL |
+| Kubernetes container running as root (`runAsUser: 0` or `runAsNonRoot: false`) | HIGH |
+| Kubernetes pod with `hostNetwork: true` | HIGH |
+| Kubernetes hostPath volume mount (CRITICAL for sensitive paths like Docker socket) | HIGH–CRITICAL |
 | No `ai-stack-manifest.json` | LOW |
 
 Exact match rules, ports and image substrings are in [`docs/rules.md`](docs/rules.md). A port bound to `127.0.0.1`, `localhost` or `::1` is treated as safe.
@@ -86,7 +91,6 @@ Agent runtimes get their own rule because they are not chat windows: they execut
 ## What it does not do
 
 - It does not scan networks or running containers; it only reads files.
-- Kubernetes manifests are on the [roadmap](docs/roadmap.md), not implemented.
 - It does not edit your files, read secret values into findings, call the internet or collect telemetry. The only optional network call is `tasia explain` to a local Ollama you run.
 - It does not prove security or compliance. A PASS means no rule matched.
 - The generated `docker-compose.hardened.override.yml` is a suggestion, not a drop-in file. Compose appends `ports` lists when merging files, so apply the changes to your base file (or use the `!override` tag) and check with `docker compose config`. The file says this in its header.
@@ -152,9 +156,9 @@ Severity overrides apply after `.tasiaignore` suppressions and before the decisi
 
 ```mermaid
 flowchart LR
-  F["compose, .env*, Dockerfile files"] --> C["collect: walk tree, parse YAML nodes, record env key names"]
+  F["compose, .env*, Dockerfile, Kube files"] --> C["collect: walk tree, parse YAML nodes, record env key names"]
   C -- "unparseable file" --> X["Decision ERROR, exit 2"]
-  C --> R["rules: 22 deterministic checks"]
+  C --> R["rules: 27 deterministic checks"]
   R --> I["ignore: apply .tasiaignore suppressions"]
   I --> D["report: Decide PASS or BLOCKED"]
   D --> T["terminal summary or JSON"]

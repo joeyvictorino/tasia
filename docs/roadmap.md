@@ -28,7 +28,7 @@
 
 ## v0.3
 
-- Kubernetes / Helm basics
+- ~~Kubernetes / Helm basics~~ (done: `kube_exposed_service`, `kube_privileged`, `kube_run_as_root`, `kube_host_network`, `kube_host_path`)
 - ~~Ignore / policy file (`.tasiaignore`)~~ (done: `internal/ignore` package, supports rule IDs, file paths, globs, inline comments)
 - ~~Configurable rule severities~~ (done: `.tasiarc.yaml` with `severities:` map, `internal/config` package)
 
