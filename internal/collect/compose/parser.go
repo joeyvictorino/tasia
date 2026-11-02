@@ -46,6 +46,28 @@ type Service struct {
 	CapDropLine     int
 	SecurityOpt     []string
 	SecurityOptLine int
+	// Healthcheck fields
+	Healthcheck     *Healthcheck
+	HealthcheckLine int
+	// Logging fields
+	Logging     *LoggingConfig
+	LoggingLine int
+}
+
+// Healthcheck represents the healthcheck block in a compose service.
+type Healthcheck struct {
+	Test        []string
+	Interval    string
+	Timeout     string
+	Retries     int
+	StartPeriod string
+	Disable     bool
+}
+
+// LoggingConfig represents the logging block in a compose service.
+type LoggingConfig struct {
+	Driver  string
+	Options map[string]string
 }
 
 type PortMapping struct {
@@ -208,6 +230,60 @@ func Parse(path string) (*File, error) {
 				for _, s := range secOptNode.Content {
 					svc.SecurityOpt = append(svc.SecurityOpt, s.Value)
 				}
+			}
+			// healthcheck
+			hcNode := getMapValue(svcNode, "healthcheck")
+			if hcNode != nil {
+				svc.HealthcheckLine = hcNode.Line
+				hc := &Healthcheck{}
+				testNode := getMapValue(hcNode, "test")
+				if testNode != nil {
+					if testNode.Kind == yaml.SequenceNode {
+						for _, t := range testNode.Content {
+							hc.Test = append(hc.Test, t.Value)
+						}
+					} else {
+						hc.Test = []string{"CMD-SHELL", testNode.Value}
+					}
+				}
+				if v := getScalar(hcNode, "interval"); v != "" {
+					hc.Interval = v
+				}
+				if v := getScalar(hcNode, "timeout"); v != "" {
+					hc.Timeout = v
+				}
+				if v := getScalar(hcNode, "start_period"); v != "" {
+					hc.StartPeriod = v
+				}
+				if v := getScalar(hcNode, "retries"); v != "" {
+					if n, ok := atoiSafe(v); ok {
+						hc.Retries = n
+					}
+				}
+				disNode := getMapValue(hcNode, "disable")
+				if disNode != nil && (disNode.Value == "true" || disNode.Value == "yes") {
+					hc.Disable = true
+				}
+				if len(hc.Test) > 0 && len(hc.Test) == 1 && hc.Test[0] == "NONE" {
+					hc.Disable = true
+				}
+				svc.Healthcheck = hc
+			}
+			// logging
+			logNode := getMapValue(svcNode, "logging")
+			if logNode != nil {
+				svc.LoggingLine = logNode.Line
+				lc := &LoggingConfig{Options: map[string]string{}}
+				if d := getScalar(logNode, "driver"); d != "" {
+					lc.Driver = d
+				}
+				optNode := getMapValue(logNode, "options")
+				if optNode != nil && optNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(optNode.Content); j += 2 {
+						lc.Options[optNode.Content[j].Value] = optNode.Content[j+1].Value
+					}
+				}
+				svc.Logging = lc
 			}
 			f.Services = append(f.Services, svc)
 		}

@@ -172,6 +172,10 @@ func Run(args []string) error {
 		return runIsolation(args[1:])
 	case "volumes":
 		return runVolumes(args[1:])
+	case "healthcheck":
+		return runHealthcheck(args[1:])
+	case "logging":
+		return runLogging(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -249,6 +253,8 @@ Usage:
   tasia entropy [--path .] [--format text|json] [--threshold 3.5] [--recursive]
   tasia isolation [--path .] [--format text|json] [--recursive]
   tasia volumes [--path .] [--format text|json] [--recursive]
+  tasia healthcheck [--path .] [--format text|json] [--recursive]
+  tasia logging [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
