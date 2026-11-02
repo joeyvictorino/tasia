@@ -102,6 +102,7 @@ func evaluateService(relCompose string, svc compose.Service, stackHasAI bool) []
 	out = append(out, agentAutoApproveFindings(svc, relCompose)...)
 	appendIf(agentAutoRestartFinding(svc, relCompose))
 	out = append(out, agentTestMountFindings(svc, relCompose)...)
+	appendIf(vectorDBNoAuthFinding(svc, relCompose))
 
 	return out
 }
@@ -352,6 +353,53 @@ func agentAutoRestartFinding(svc compose.Service, relCompose string) (Finding, b
 		Why:      "An agent runtime that restarts automatically after a crash can retry destructive model-written actions in a loop without human intervention.",
 		Fix:      "Use restart: on-failure with a max retry count, or restart: no, and monitor the service externally.",
 	}, true
+}
+
+// vectorDBAuthKeys maps image-keyword substrings to the environment variable
+// key names (upper-cased) that indicate authentication is configured.
+var vectorDBAuthKeys = map[string][]string{
+	"chroma": {
+		"CHROMA_SERVER_AUTHN_CREDENTIALS",
+		"CHROMA_SERVER_AUTHN_PROVIDER",
+		"CHROMA_SERVER_AUTH_CREDENTIALS",
+	},
+	"weaviate": {
+		"AUTHENTICATION_APIKEY_ENABLED",
+		"AUTHENTICATION_OIDC_ENABLED",
+		"AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED",
+	},
+}
+
+// vectorDBNoAuthFinding flags Chroma or Weaviate services that have no
+// authentication-related environment variable set. These databases default to
+// no authentication, so anyone on the network can read and write embeddings.
+func vectorDBNoAuthFinding(svc compose.Service, relCompose string) (Finding, bool) {
+	img := strings.ToLower(svc.Image)
+	for keyword, authKeys := range vectorDBAuthKeys {
+		if !strings.Contains(img, keyword) {
+			continue
+		}
+		for _, env := range svc.Environment {
+			key, _, _ := strings.Cut(env, "=")
+			upper := strings.ToUpper(strings.TrimSpace(key))
+			for _, ak := range authKeys {
+				if upper == ak {
+					return Finding{}, false
+				}
+			}
+		}
+		return Finding{
+			ID:       "vector_db_no_auth",
+			Severity: SeverityLow,
+			Title:    fmt.Sprintf("%s has no authentication configuration", keyword),
+			File:     relCompose,
+			Line:     svc.EnvLine,
+			Evidence: fmt.Sprintf("service=%s image=%s", svc.Name, svc.Image),
+			Why:      fmt.Sprintf("%s defaults to no authentication. Anyone on the Docker network (or the host, if ports are published) can read and write the embeddings store.", strings.ToUpper(keyword[:1])+keyword[1:]),
+			Fix:      "Set authentication environment variables or use an authenticating proxy in front of the database.",
+		}, true
+	}
+	return Finding{}, false
 }
 
 // testDirPrefixes are path prefixes that indicate test or fixture directories.

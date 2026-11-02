@@ -522,6 +522,108 @@ func TestAgentAutoApproveNotFlaggedOnNonAgent(t *testing.T) {
 	}
 }
 
+func TestVectorDBNoAuthChroma(t *testing.T) {
+	// Chroma with no auth env: flagged
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "chroma", Image: "chromadb/chroma:0.5", EnvLine: 3,
+					Environment: []string{"CHROMA_DATA_DIR=/data"}},
+			},
+		}},
+	}
+	var found []Finding
+	for _, f := range Evaluate(c) {
+		if f.ID == "vector_db_no_auth" {
+			found = append(found, f)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected 1 vector_db_no_auth for chroma, got %d", len(found))
+	}
+	if found[0].Severity != SeverityLow {
+		t.Errorf("vector_db_no_auth should be LOW, got %s", found[0].Severity)
+	}
+
+	// Chroma WITH auth env: not flagged
+	c2 := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "chroma", Image: "chromadb/chroma:0.5", EnvLine: 3,
+					Environment: []string{"CHROMA_SERVER_AUTHN_CREDENTIALS=token123"}},
+			},
+		}},
+	}
+	for _, f := range Evaluate(c2) {
+		if f.ID == "vector_db_no_auth" {
+			t.Error("chroma with auth creds should NOT be flagged")
+		}
+	}
+}
+
+func TestVectorDBNoAuthWeaviate(t *testing.T) {
+	// Weaviate with no auth
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "weaviate", Image: "semitechnologies/weaviate:1.25", EnvLine: 3,
+					Environment: []string{"QUERY_DEFAULTS_LIMIT=20"}},
+			},
+		}},
+	}
+	var found bool
+	for _, f := range Evaluate(c) {
+		if f.ID == "vector_db_no_auth" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("weaviate without auth should be flagged")
+	}
+
+	// Weaviate WITH apikey auth: not flagged
+	c2 := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "weaviate", Image: "semitechnologies/weaviate:1.25", EnvLine: 3,
+					Environment: []string{"AUTHENTICATION_APIKEY_ENABLED=true"}},
+			},
+		}},
+	}
+	for _, f := range Evaluate(c2) {
+		if f.ID == "vector_db_no_auth" {
+			t.Error("weaviate with AUTHENTICATION_APIKEY_ENABLED should NOT be flagged")
+		}
+	}
+}
+
+func TestVectorDBNoAuthNotFlaggedOnOther(t *testing.T) {
+	// Qdrant and Milvus: should NOT be flagged (no auth keys defined for them)
+	c := &collect.Collected{
+		Root: ".",
+		ComposeFiles: []compose.File{{
+			Path: "docker-compose.yml",
+			Services: []compose.Service{
+				{Name: "qdrant", Image: "qdrant/qdrant:1.11"},
+				{Name: "milvus", Image: "milvusdb/milvus:v2.4"},
+			},
+		}},
+	}
+	for _, f := range Evaluate(c) {
+		if f.ID == "vector_db_no_auth" {
+			t.Errorf("qdrant/milvus should not be flagged by vector_db_no_auth: %+v", f)
+		}
+	}
+}
+
 func TestAgentTestMountDetected(t *testing.T) {
 	c := &collect.Collected{
 		Root: ".",

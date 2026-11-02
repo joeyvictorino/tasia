@@ -23,7 +23,7 @@
   test or fixture directories are mounted writable into an agent service~~
   (done: `agent_auto_approve`, `agent_test_mount`, `agent_auto_restart`)
 - Caddyfile / nginx auth checks
-- Chroma / Weaviate auth hints
+- ~~Chroma / Weaviate auth hints~~ (done: `vector_db_no_auth`)
 - Dockerfile `USER root` / `EXPOSE` analysis
 
 ## v0.3
