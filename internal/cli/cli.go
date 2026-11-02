@@ -264,6 +264,10 @@ func Run(args []string) error {
 		return runCredentialScan(args[1:])
 	case "compose-override":
 		return runComposeOverride(args[1:])
+	case "egress-map":
+		return runEgressMap(args[1:])
+	case "service-mesh":
+		return runServiceMesh(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
