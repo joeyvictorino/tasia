@@ -37,33 +37,327 @@ safe and does not trigger an exposure finding. A service with
 `ports:` mapping to bind), so a recognized runtime/UI/vector/data-store on the
 host network is flagged accordingly.
 
-## Rules implemented (v0.1)
+## Compose — exposure (5 rules)
 
-Fourteen rules. Two of them change severity with context: a data store is HIGH
-beside AI components, and a broad writable mount is HIGH on an agent runtime.
+### <a id="exposed_inference"></a>`exposed_inference`
 
+**Severity:** HIGH — **Category:** compose
 
-| id | severity | fires when |
-|----|----------|------------|
-| `exposed_inference` | HIGH | An inference service publishes a port to all interfaces (not localhost-bound), including via `network_mode: host`. |
-| `exposed_ui` | HIGH | Open WebUI / Gradio UI publishes a port to all interfaces. |
-| `exposed_vector` | HIGH | A vector DB (Qdrant/Chroma/Weaviate/Milvus) publishes a port to the host. |
-| `exposed_datastore` | HIGH / MEDIUM | Redis/Postgres publishes a port to all interfaces. **HIGH** when an AI component (inference/UI/vector/agent runtime) is present in the same compose file, otherwise **MEDIUM**. |
-| `exposed_agent_runtime` | HIGH | An agent runtime (n8n, Flowise, Langflow, Dify, OpenHands and similar) publishes a port to all interfaces or runs with `network_mode: host`. It executes tools and model-written code, so exposure is a code-execution surface, not a chat window. |
-| `docker_socket_mount` | CRITICAL | A service mounts `/var/run/docker.sock`. |
-| `privileged_container` | CRITICAL | A service sets `privileged: true`. |
-| `permissive_cors` | HIGH | `OLLAMA_ORIGINS` / `*CORS*` / `*ALLOW_ORIGINS*` is `*`, contains `*`, or is empty. |
-| `latest_image` | MEDIUM | An image uses `:latest` or has no tag. |
-| `broad_bind_mount` | MEDIUM / HIGH | A broad host bind mount (e.g. `.:/app`) that is not read-only. **HIGH** on an agent runtime: a writable mount of the project lets the agent edit the tests, check scripts and expected outputs that judge its own work, so a passing check proves nothing. |
-| `env_token_key` | MEDIUM | A token/secret/API/auth key **name** appears in a `.env*` file or a compose `environment:` block (values never inspected or emitted). Reports the real line number. |
-| `no_internal_network` | MEDIUM | A multi-service compose file publishes ports but defines no `internal: true` network. |
-| `agent_shared_secret` | HIGH | Two or more agent runtime services in the same compose file share a secret-looking environment variable key name. Compromise of one agent exposes every service the shared credential can reach. |
-| `no_ai_stack_manifest` | LOW | An AI compose stack has no `ai-stack-manifest.json`. |
+Inference API published to all interfaces. Ollama, vLLM, llama.cpp or LM Studio
+port bound to 0.0.0.0.
 
-Volume rules understand both the short form (`/var/run/docker.sock:/var/run/docker.sock`)
-and the long form (`type: bind` / `source:` / `target:`).
+### <a id="exposed_ui"></a>`exposed_ui`
 
-## Not yet implemented (roadmap)
+**Severity:** HIGH — **Category:** compose
 
-SARIF output, Caddyfile / nginx auth checks, Dockerfile `USER root` / `EXPOSE`
-analysis, Kubernetes manifests. See `docs/roadmap.md`.
+Chat UI published to all interfaces. Open WebUI or Gradio port bound to 0.0.0.0.
+
+### <a id="exposed_vector"></a>`exposed_vector`
+
+**Severity:** HIGH — **Category:** compose
+
+Vector DB published to host. Qdrant, Chroma, Weaviate or Milvus port bound to
+0.0.0.0.
+
+### <a id="exposed_datastore"></a>`exposed_datastore`
+
+**Severity:** MEDIUM (HIGH alongside AI components) — **Category:** compose
+
+Data store published to all interfaces. Redis, Valkey, Postgres or pgvector port
+exposed. Severity is **HIGH** when an AI component (inference/UI/vector/agent
+runtime) is present in the same compose file, otherwise **MEDIUM**.
+
+### <a id="exposed_agent_runtime"></a>`exposed_agent_runtime`
+
+**Severity:** HIGH — **Category:** compose
+
+Agent runtime published to all interfaces. n8n, Flowise, Langflow, Dify,
+OpenHands or similar agent service exposed. It executes tools and model-written
+code, so exposure is a code-execution surface, not a chat window.
+
+## Compose — container security (8 rules)
+
+### <a id="docker_socket_mount"></a>`docker_socket_mount`
+
+**Severity:** CRITICAL — **Category:** compose
+
+Docker socket mounted. `/var/run/docker.sock` bind-mounted into a container.
+
+### <a id="privileged_container"></a>`privileged_container`
+
+**Severity:** CRITICAL — **Category:** compose
+
+Privileged container. Container runs with `privileged: true`.
+
+### <a id="permissive_cors"></a>`permissive_cors`
+
+**Severity:** HIGH — **Category:** compose
+
+Permissive CORS. `OLLAMA_ORIGINS=*` or similar wildcard CORS setting.
+
+### <a id="latest_image"></a>`latest_image`
+
+**Severity:** MEDIUM — **Category:** compose
+
+Mutable image tag. Image uses `:latest` or has no tag.
+
+### <a id="broad_bind_mount"></a>`broad_bind_mount`
+
+**Severity:** MEDIUM (HIGH on agent runtimes) — **Category:** compose
+
+Broad writable bind mount. Broad volume like `.:/app` mounted writable. **HIGH**
+on an agent runtime: a writable mount of the project lets the agent edit the
+tests, check scripts and expected outputs that judge its own work.
+
+### <a id="env_token_key"></a>`env_token_key`
+
+**Severity:** MEDIUM — **Category:** compose
+
+Secret key name in config. Token/secret/key name found in `.env` or compose
+`environment:` block (value never read or emitted).
+
+### <a id="env_hardcoded_secret"></a>`env_hardcoded_secret`
+
+**Severity:** HIGH — **Category:** compose
+
+Hardcoded secret value. Value matches a known secret pattern (`sk-`, `ghp_`,
+`AKIA`, JWT, hex/base64 blob); value never emitted.
+
+### <a id="no_internal_network"></a>`no_internal_network`
+
+**Severity:** MEDIUM — **Category:** compose
+
+No internal network separation. Multi-service stack with published ports but no
+`internal: true` network.
+
+## Compose — vector DB auth (1 rule)
+
+### <a id="vector_db_no_auth"></a>`vector_db_no_auth`
+
+**Severity:** LOW — **Category:** compose
+
+Vector DB without authentication. Chroma or Weaviate running without
+authentication configuration.
+
+## Agent runtime (4 rules)
+
+### <a id="agent_auto_approve"></a>`agent_auto_approve`
+
+**Severity:** HIGH — **Category:** agent
+
+Agent auto-approve or code execution. `N8N_ALLOW_EXEC`,
+`FLOWISE_ALLOW_CODE_EXEC`, `AUTO_APPROVE` or similar enabled.
+
+### <a id="agent_shared_secret"></a>`agent_shared_secret`
+
+**Severity:** HIGH — **Category:** agent
+
+Shared secret across agent runtimes. Same secret key name used by multiple agent
+runtime services.
+
+### <a id="agent_test_mount"></a>`agent_test_mount`
+
+**Severity:** HIGH — **Category:** agent
+
+Test directory mounted into agent. `test/`, `spec/`, `fixtures/` or similar
+mounted writable into agent runtime.
+
+### <a id="agent_auto_restart"></a>`agent_auto_restart`
+
+**Severity:** MEDIUM — **Category:** agent
+
+Agent runtime auto-restart. `restart: always` or `unless-stopped` on an agent
+runtime (retries destructive actions).
+
+## Manifest (1 rule)
+
+### <a id="no_ai_stack_manifest"></a>`no_ai_stack_manifest`
+
+**Severity:** LOW — **Category:** manifest
+
+No AI stack manifest. No `ai-stack-manifest.json` found in the scanned directory.
+
+## Dockerfile (3 rules)
+
+### <a id="dockerfile_user_root"></a>`dockerfile_user_root`
+
+**Severity:** HIGH — **Category:** dockerfile
+
+Dockerfile runs as root. `USER root` or `USER 0` in Dockerfile.
+
+### <a id="dockerfile_expose"></a>`dockerfile_expose`
+
+**Severity:** LOW — **Category:** dockerfile
+
+Dockerfile EXPOSE directive. `EXPOSE` directive in Dockerfile (informational).
+
+### <a id="dockerfile_expose_sensitive"></a>`dockerfile_expose_sensitive`
+
+**Severity:** MEDIUM — **Category:** dockerfile
+
+Dockerfile exposes sensitive port. `EXPOSE` of database, SSH or Docker daemon port.
+
+## Reverse proxy (1 rule)
+
+### <a id="reverse_proxy_no_auth"></a>`reverse_proxy_no_auth`
+
+**Severity:** MEDIUM — **Category:** proxy
+
+Reverse proxy without authentication. Caddyfile or nginx reverse proxy with no
+`basic_auth`, `forward_auth` or `auth_request`.
+
+## Kubernetes (6 rules)
+
+### <a id="kube_exposed_service"></a>`kube_exposed_service`
+
+**Severity:** HIGH — **Category:** kubernetes
+
+Kubernetes Service exposed externally. Service type LoadBalancer or NodePort
+exposes pods outside the cluster.
+
+### <a id="kube_privileged"></a>`kube_privileged`
+
+**Severity:** CRITICAL — **Category:** kubernetes
+
+Kubernetes privileged container. `securityContext.privileged: true` on a
+container.
+
+### <a id="kube_run_as_root"></a>`kube_run_as_root`
+
+**Severity:** HIGH — **Category:** kubernetes
+
+Kubernetes container runs as root. `runAsUser: 0` or `runAsNonRoot: false` on a
+container.
+
+### <a id="kube_host_network"></a>`kube_host_network`
+
+**Severity:** HIGH — **Category:** kubernetes
+
+Kubernetes pod on host network. `hostNetwork: true` puts pod on the host's
+network stack.
+
+### <a id="kube_host_path"></a>`kube_host_path`
+
+**Severity:** HIGH — **Category:** kubernetes
+
+Kubernetes hostPath mount. `hostPath` volume gives container direct host
+filesystem access (CRITICAL for sensitive paths).
+
+### <a id="kube_no_network_policy"></a>`kube_no_network_policy`
+
+**Severity:** MEDIUM — **Category:** kubernetes
+
+Kubernetes workloads without NetworkPolicy. Workloads defined without a
+NetworkPolicy restricting pod-to-pod and egress traffic.
+
+## Helm (1 rule)
+
+### <a id="helm_insecure_default"></a>`helm_insecure_default`
+
+**Severity:** HIGH — **Category:** helm
+
+Helm values.yaml insecure default. Insecure default in values.yaml (privileged,
+hostNetwork, runAsUser 0, LoadBalancer/NodePort, hostPath).
+
+## Terraform — AWS (6 rules)
+
+### <a id="tf_sg_ingress_all"></a>`tf_sg_ingress_all`
+
+**Severity:** CRITICAL — **Category:** terraform
+
+Security group allows all inbound traffic. AWS security group ingress rule with
+`0.0.0.0/0` and all ports/protocols.
+
+### <a id="tf_sg_ingress_sensitive"></a>`tf_sg_ingress_sensitive`
+
+**Severity:** HIGH — **Category:** terraform
+
+Security group exposes sensitive port to internet. AWS security group ingress
+from `0.0.0.0/0` on SSH, database, or admin port.
+
+### <a id="tf_sg_ingress_wide"></a>`tf_sg_ingress_wide`
+
+**Severity:** MEDIUM — **Category:** terraform
+
+Security group allows internet ingress. AWS security group ingress from
+`0.0.0.0/0` on a non-sensitive port.
+
+### <a id="tf_s3_public_acl"></a>`tf_s3_public_acl`
+
+**Severity:** HIGH — **Category:** terraform
+
+S3 bucket with public ACL. S3 bucket uses `public-read` or `public-read-write`
+ACL.
+
+### <a id="tf_iam_admin_access"></a>`tf_iam_admin_access`
+
+**Severity:** CRITICAL — **Category:** terraform
+
+IAM policy grants unrestricted admin access. IAM policy with `Effect=Allow`
+`actions=[*]` `resources=[*]`.
+
+### <a id="tf_iam_star_actions"></a>`tf_iam_star_actions`
+
+**Severity:** HIGH — **Category:** terraform
+
+IAM policy grants all actions. IAM policy with `Effect=Allow` `actions=[*]`.
+
+## Terraform — GCP (4 rules)
+
+### <a id="tf_gcp_firewall_ingress_all"></a>`tf_gcp_firewall_ingress_all`
+
+**Severity:** CRITICAL — **Category:** terraform
+
+GCP firewall allows all inbound traffic. GCP compute firewall with
+`source_ranges 0.0.0.0/0` and all ports.
+
+### <a id="tf_gcp_firewall_ingress_sensitive"></a>`tf_gcp_firewall_ingress_sensitive`
+
+**Severity:** HIGH — **Category:** terraform
+
+GCP firewall exposes sensitive port to internet. GCP compute firewall with
+`source_ranges 0.0.0.0/0` on SSH, database, or admin port.
+
+### <a id="tf_gcp_firewall_ingress_wide"></a>`tf_gcp_firewall_ingress_wide`
+
+**Severity:** MEDIUM — **Category:** terraform
+
+GCP firewall allows internet ingress. GCP compute firewall with `source_ranges
+0.0.0.0/0` on a non-sensitive port.
+
+### <a id="tf_gcp_storage_public"></a>`tf_gcp_storage_public`
+
+**Severity:** HIGH — **Category:** terraform
+
+GCP storage bucket with public access. GCS bucket ACL or IAM binding grants
+`allUsers` or `allAuthenticatedUsers`.
+
+## Terraform — Azure (4 rules)
+
+### <a id="tf_azure_nsg_ingress_all"></a>`tf_azure_nsg_ingress_all`
+
+**Severity:** CRITICAL — **Category:** terraform
+
+Azure NSG allows all inbound traffic. Azure network security rule with source `*`
+and all ports.
+
+### <a id="tf_azure_nsg_ingress_sensitive"></a>`tf_azure_nsg_ingress_sensitive`
+
+**Severity:** HIGH — **Category:** terraform
+
+Azure NSG exposes sensitive port to internet. Azure network security rule with
+internet source on SSH, database, or admin port.
+
+### <a id="tf_azure_nsg_ingress_wide"></a>`tf_azure_nsg_ingress_wide`
+
+**Severity:** MEDIUM — **Category:** terraform
+
+Azure NSG allows internet ingress. Azure network security rule with internet
+source on a non-sensitive port.
+
+### <a id="tf_azure_storage_public"></a>`tf_azure_storage_public`
+
+**Severity:** HIGH — **Category:** terraform
+
+Azure storage account allows public blob access. Azure storage account with
+`allow_blob_public_access = true`.
