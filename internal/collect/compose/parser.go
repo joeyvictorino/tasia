@@ -74,6 +74,12 @@ type Service struct {
 	// User namespace mode
 	UsernsMode     string
 	UsernsModeLine int
+	// PID namespace mode
+	PidMode     string
+	PidModeLine int
+	// IPC namespace mode
+	IpcMode     string
+	IpcModeLine int
 	// Labels
 	Labels    map[string]string
 	LabelsLine int
@@ -195,6 +201,18 @@ func Parse(path string) (*File, error) {
 			if unsNode != nil {
 				svc.UsernsMode = strings.Trim(unsNode.Value, `"' `)
 				svc.UsernsModeLine = unsNode.Line
+			}
+			// pid
+			pidNode := getMapValue(svcNode, "pid")
+			if pidNode != nil {
+				svc.PidMode = strings.Trim(pidNode.Value, `"' `)
+				svc.PidModeLine = pidNode.Line
+			}
+			// ipc
+			ipcNode := getMapValue(svcNode, "ipc")
+			if ipcNode != nil {
+				svc.IpcMode = strings.Trim(ipcNode.Value, `"' `)
+				svc.IpcModeLine = ipcNode.Line
 			}
 			// restart
 			restartNode := getMapValue(svcNode, "restart")

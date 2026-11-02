@@ -192,6 +192,10 @@ func Run(args []string) error {
 		return runUserns(args[1:])
 	case "seccomp":
 		return runSeccomp(args[1:])
+	case "pid-ns":
+		return runPidns(args[1:])
+	case "ipc":
+		return runIpcns(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
