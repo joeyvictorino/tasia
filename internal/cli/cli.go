@@ -118,6 +118,10 @@ func Run(args []string) error {
 		return runTrendsCmd(args[1:])
 	case "bench":
 		return runBench(args[1:])
+	case "deps":
+		return runDeps(args[1:])
+	case "matrix":
+		return runMatrix(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
