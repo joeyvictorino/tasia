@@ -82,6 +82,47 @@ func PrintSummary(findings []rules.Finding, decision, risk string) {
 	}
 }
 
+// PrintVerboseSummary prints the terminal view with full why/fix/evidence
+// details under each finding, for debugging and remediation planning.
+func PrintVerboseSummary(findings []rules.Finding, decision, risk string) {
+	fmt.Println("TASIA")
+	fmt.Printf("Decision: %s\n", decision)
+	fmt.Printf("Risk: %s\n", risk)
+
+	bySev := groupBySev(findings)
+	for _, sev := range severityOrder {
+		list := bySev[sev]
+		if len(list) == 0 {
+			continue
+		}
+		fmt.Printf("\n── %s ──\n", strings.ToUpper(string(sev)))
+		for _, f := range list {
+			loc := ""
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+			} else {
+				loc = f.File
+			}
+			fmt.Printf("\n  [%s] %s %s\n", f.Severity, loc, f.Title)
+			if f.Evidence != "" {
+				fmt.Printf("    Evidence: %s\n", f.Evidence)
+			}
+			if f.Why != "" {
+				fmt.Printf("    Why:      %s\n", f.Why)
+			}
+			if f.Fix != "" {
+				fmt.Printf("    Fix:      %s\n", f.Fix)
+			}
+		}
+	}
+
+	if decision == "BLOCKED" {
+		fmt.Printf("\n%d finding(s) require attention before shipping this private AI stack.\n", len(findings))
+	} else {
+		fmt.Println("\nNo blocking findings.")
+	}
+}
+
 // PrintErrorVerdict renders the fail-closed verdict when a config file could
 // not be parsed. The gate reports ERROR rather than vouching for a stack it
 // could not fully read.
