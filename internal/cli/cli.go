@@ -236,6 +236,8 @@ func Run(args []string) error {
 		return runImageTrust(args[1:])
 	case "attack-surface":
 		return runAttacksurf(args[1:])
+	case "layer-trust":
+		return runLayerTrust(args[1:])
 	case "compose-lint":
 		return runComposeLint(args[1:])
 	case "service-map":
