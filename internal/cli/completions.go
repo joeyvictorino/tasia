@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint layer-trust service-map image-age layer-audit multi-stage build-cache readonly-fs env-leak registry sidecar egress completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint layer-trust service-map image-age layer-audit multi-stage build-cache readonly-fs env-leak registry sidecar egress apparmor selinux completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -142,6 +142,8 @@ _tasia() {
         'build-cache:Build cache mount security audit'
         'readonly-fs:Read-only filesystem analysis for compose services'
         'env-leak:Environment variable leak path detection'
+        'apparmor:Audit AppArmor profile configuration'
+        'selinux:Audit SELinux context configuration'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -519,6 +521,14 @@ complete -c tasia -n '__fish_use_subcommand' -a 'env-leak' -d 'Environment varia
 complete -c tasia -n '__fish_seen_subcommand_from env-leak' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from env-leak' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from env-leak' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'apparmor' -d 'Audit AppArmor profile configuration'
+complete -c tasia -n '__fish_seen_subcommand_from apparmor' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from apparmor' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from apparmor' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'selinux' -d 'Audit SELinux context configuration'
+complete -c tasia -n '__fish_seen_subcommand_from selinux' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from selinux' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from selinux' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'

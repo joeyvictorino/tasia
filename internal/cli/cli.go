@@ -272,6 +272,10 @@ func Run(args []string) error {
 		return runServiceDep(args[1:])
 	case "health-probe":
 		return runHealthProbe(args[1:])
+	case "apparmor":
+		return runAppArmor(args[1:])
+	case "selinux":
+		return runSELinux(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
