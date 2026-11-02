@@ -109,6 +109,7 @@ Agent runtimes get their own rule because they are not chat windows: they execut
 ```
 tasia review --path .  [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict]
 tasia ci     --path .  [--fail-on critical|high|medium|low]     # default: high
+tasia diff   --base DIR --current DIR [--format text|json] [--fail-on critical|high|medium|low]
 tasia install --pre-push          # git hook that runs: tasia ci --path . --fail-on high
 tasia uninstall --pre-push
 tasia explain [--path .] [--ollama MODEL] [--ollama-host HOST[:PORT]]
@@ -118,6 +119,7 @@ tasia version
 ```
 
 - `review` reports and exits 0 when it completes, whatever the decision; use `ci` (or the pre-push hook) to gate. `--format json` prints pure JSON on stdout. `--format sarif` prints SARIF v2.1.0 JSON for upload to GitHub Code Scanning (see `.github/workflows/sarif.yml`).
+- `diff` compares two scan directories and reports new, fixed and unchanged findings. With `--fail-on`, exits 1 if any new finding is at or above the threshold. Useful for CI gating on regressions.
 - `schema` prints the JSON Schema that describes the `--format json` output (see [`docs/findings-schema.json`](docs/findings-schema.json)). Use it to validate output or generate types in other languages.
 - `ci` exits 0 (pass), 1 (blocked at or above `--fail-on`) or 2 (tool or config error).
 - Fails closed: a compose or env file that cannot be parsed gives `Decision: ERROR` and exit 2, never PASS. An unknown `--fail-on` value is also exit 2.

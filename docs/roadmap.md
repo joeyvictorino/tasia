@@ -38,3 +38,12 @@
 - ~~Findings JSON schema~~ (done: `tasia schema` command, `docs/findings-schema.json`, `schema_version` field in `--format json` output)
 - ~~Versioned rule catalog~~ (done: `tasia rules --format json` prints every rule with stable fields)
 - ~~Documented public Go API~~ (done: godoc package comments on all 8 packages: rules, report, collect, collect/compose, ignore, config, cli, llm)
+
+## v1.1
+
+- ~~Terraform scanning~~ (done: `tf_sg_ingress_all`, `tf_sg_ingress_sensitive`, `tf_sg_ingress_wide`, `tf_s3_public_acl`, `tf_iam_admin_access`, `tf_iam_star_actions`)
+- ~~docker-compose override/variant file support~~ (done: `docker-compose.override.yml`, `docker-compose.prod.yaml`, etc.)
+- ~~Hardcoded secret value detection~~ (done: `env_hardcoded_secret`)
+- ~~Kubernetes NetworkPolicy absence detection~~ (done: `kube_no_network_policy`)
+- ~~`tasia diff` command for comparing two scans~~ (done: `--base`, `--current`, `--format text|json`, `--fail-on` for CI gating on regressions)
+- GCP and Azure Terraform rules
