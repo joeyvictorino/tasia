@@ -100,6 +100,17 @@ type Service struct {
 	EntrypointLine int
 	Command        []string
 	CommandLine    int
+	// OOM fields
+	OomKillDisable     bool
+	OomKillDisableLine int
+	OomScoreAdj        int
+	OomScoreAdjLine    int
+	OomScoreAdjSet     bool
+	MemswapLimit       string
+	MemswapLimitLine   int
+	// Deploy restart policy
+	DeployRestartPolicy *DeployRestartPolicy
+	DeployRestartLine   int
 	// Runtime fields
 	StdinOpen         bool
 	StdinOpenLine     int
@@ -122,6 +133,14 @@ type UlimitValue struct {
 // DependsOnCondition represents a depends_on entry with an optional condition.
 type DependsOnCondition struct {
 	Condition string // "service_started", "service_healthy", "service_completed_successfully", or ""
+}
+
+// DeployRestartPolicy represents the deploy.restart_policy block.
+type DeployRestartPolicy struct {
+	Condition   string
+	Delay       string
+	MaxAttempts int
+	Window      string
 }
 
 // Healthcheck represents the healthcheck block in a compose service.
@@ -436,6 +455,50 @@ func Parse(path string) (*File, error) {
 							svc.MemReservation = v
 						}
 					}
+				}
+			}
+			// oom_kill_disable
+			oomKillNode := getMapValue(svcNode, "oom_kill_disable")
+			if oomKillNode != nil && (oomKillNode.Value == "true" || oomKillNode.Value == "yes") {
+				svc.OomKillDisable = true
+				svc.OomKillDisableLine = oomKillNode.Line
+			}
+			// oom_score_adj
+			oomScoreNode := getMapValue(svcNode, "oom_score_adj")
+			if oomScoreNode != nil {
+				if n, ok := atoiSafe(oomScoreNode.Value); ok {
+					svc.OomScoreAdj = n
+					svc.OomScoreAdjSet = true
+					svc.OomScoreAdjLine = oomScoreNode.Line
+				}
+			}
+			// memswap_limit
+			mswapNode := getMapValue(svcNode, "memswap_limit")
+			if mswapNode != nil {
+				svc.MemswapLimit = mswapNode.Value
+				svc.MemswapLimitLine = mswapNode.Line
+			}
+			// deploy.restart_policy
+			if deployNode != nil {
+				rpNode := getMapValue(deployNode, "restart_policy")
+				if rpNode != nil {
+					svc.DeployRestartLine = rpNode.Line
+					rp := &DeployRestartPolicy{}
+					if c := getScalar(rpNode, "condition"); c != "" {
+						rp.Condition = c
+					}
+					if d := getScalar(rpNode, "delay"); d != "" {
+						rp.Delay = d
+					}
+					if ma := getScalar(rpNode, "max_attempts"); ma != "" {
+						if n, ok := atoiSafe(ma); ok {
+							rp.MaxAttempts = n
+						}
+					}
+					if w := getScalar(rpNode, "window"); w != "" {
+						rp.Window = w
+					}
+					svc.DeployRestartPolicy = rp
 				}
 			}
 			// dns

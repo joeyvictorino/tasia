@@ -216,6 +216,10 @@ func Run(args []string) error {
 		return runNetAudit(args[1:])
 	case "init-process":
 		return runInitProcess(args[1:])
+	case "oom":
+		return runOom(args[1:])
+	case "restart-policy":
+		return runRestartPolicy(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
