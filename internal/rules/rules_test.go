@@ -1219,3 +1219,114 @@ func TestCaddyfileMultipleProxiesMixed(t *testing.T) {
 		t.Errorf("finding should reference the unauthenticated upstream: %s", found[0].Evidence)
 	}
 }
+
+func TestDangerousCapabilityDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: "/tmp/test",
+		ComposeFiles: []compose.File{
+			{
+				Path: "docker-compose.yml",
+				Services: []compose.Service{
+					{
+						Name:       "agent",
+						Image:      "autogpt:latest",
+						CapAdd:     []string{"SYS_ADMIN", "NET_RAW"},
+						CapAddLine: 8,
+					},
+				},
+			},
+		},
+	}
+	fs := Evaluate(c)
+	count := 0
+	for _, f := range fs {
+		if f.ID == "dangerous_capability" {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Errorf("expected 2 dangerous_capability findings, got %d", count)
+	}
+}
+
+func TestSafeCapabilityNotFlagged(t *testing.T) {
+	c := &collect.Collected{
+		Root: "/tmp/test",
+		ComposeFiles: []compose.File{
+			{
+				Path: "docker-compose.yml",
+				Services: []compose.Service{
+					{
+						Name:       "app",
+						Image:      "myapp:1.0",
+						CapAdd:     []string{"CHOWN", "SETUID"},
+						CapAddLine: 5,
+					},
+				},
+			},
+		},
+	}
+	fs := Evaluate(c)
+	for _, f := range fs {
+		if f.ID == "dangerous_capability" {
+			t.Errorf("unexpected dangerous_capability finding for safe caps: %s", f.Evidence)
+		}
+	}
+}
+
+func TestSeccompDisabledDetected(t *testing.T) {
+	c := &collect.Collected{
+		Root: "/tmp/test",
+		ComposeFiles: []compose.File{
+			{
+				Path: "docker-compose.yml",
+				Services: []compose.Service{
+					{
+						Name:            "agent",
+						Image:           "autogpt:latest",
+						SecurityOpt:     []string{"seccomp:unconfined"},
+						SecurityOptLine: 10,
+					},
+				},
+			},
+		},
+	}
+	fs := Evaluate(c)
+	found := false
+	for _, f := range fs {
+		if f.ID == "seccomp_disabled" {
+			found = true
+			if f.Severity != "HIGH" {
+				t.Errorf("expected HIGH severity, got %s", f.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("missing seccomp_disabled finding")
+	}
+}
+
+func TestSeccompCustomProfileNotFlagged(t *testing.T) {
+	c := &collect.Collected{
+		Root: "/tmp/test",
+		ComposeFiles: []compose.File{
+			{
+				Path: "docker-compose.yml",
+				Services: []compose.Service{
+					{
+						Name:            "app",
+						Image:           "myapp:1.0",
+						SecurityOpt:     []string{"seccomp:custom-profile.json"},
+						SecurityOptLine: 10,
+					},
+				},
+			},
+		},
+	}
+	fs := Evaluate(c)
+	for _, f := range fs {
+		if f.ID == "seccomp_disabled" {
+			t.Error("unexpected seccomp_disabled finding for custom profile")
+		}
+	}
+}

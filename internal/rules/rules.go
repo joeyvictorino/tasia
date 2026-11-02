@@ -104,6 +104,8 @@ func evaluateService(relCompose string, svc compose.Service, stackHasAI bool) []
 	appendIf(hostNetworkFinding(svc, relCompose, stackHasAI))
 	out = append(out, exposedPortFindings(svc, relCompose, stackHasAI)...)
 	appendIf(privilegedFinding(svc, relCompose))
+	out = append(out, dangerousCapFindings(svc, relCompose)...)
+	appendIf(noSeccompFinding(svc, relCompose))
 	appendIf(latestImageFinding(svc, relCompose))
 	isAgent := classifyService(svc.Image, 0) == catAgent
 	out = append(out, dockerSocketFindings(svc, relCompose, isAgent)...)
@@ -219,6 +221,53 @@ func privilegedFinding(svc compose.Service, relCompose string) (Finding, bool) {
 		Why:      "Privileged containers have full host access and defeat container isolation.",
 		Fix:      "Remove privileged: true. Use specific capabilities only if absolutely required.",
 	}, true
+}
+
+var dangerousCaps = map[string]struct{}{
+	"SYS_ADMIN":  {},
+	"NET_ADMIN":  {},
+	"NET_RAW":    {},
+	"SYS_PTRACE": {},
+	"DAC_OVERRIDE": {},
+	"SYS_MODULE": {},
+	"SYS_RAWIO":  {},
+}
+
+func dangerousCapFindings(svc compose.Service, relCompose string) []Finding {
+	var out []Finding
+	for _, cap := range svc.CapAdd {
+		if _, dangerous := dangerousCaps[cap]; dangerous {
+			out = append(out, Finding{
+				ID:       "dangerous_capability",
+				Severity: SeverityHigh,
+				Title:    "Dangerous Linux capability granted",
+				File:     relCompose,
+				Line:     svc.CapAddLine,
+				Evidence: fmt.Sprintf("service=%s cap_add=%s", svc.Name, cap),
+				Why:      fmt.Sprintf("%s grants elevated host access that can be used to escape the container.", cap),
+				Fix:      fmt.Sprintf("Remove %s from cap_add unless absolutely required. Use the minimum set of capabilities.", cap),
+			})
+		}
+	}
+	return out
+}
+
+func noSeccompFinding(svc compose.Service, relCompose string) (Finding, bool) {
+	for _, opt := range svc.SecurityOpt {
+		if strings.Contains(opt, "seccomp:unconfined") || strings.Contains(opt, "seccomp=unconfined") {
+			return Finding{
+				ID:       "seccomp_disabled",
+				Severity: SeverityHigh,
+				Title:    "Seccomp profile disabled",
+				File:     relCompose,
+				Line:     svc.SecurityOptLine,
+				Evidence: fmt.Sprintf("service=%s security_opt=%s", svc.Name, opt),
+				Why:      "Disabling seccomp removes syscall filtering, allowing the container to make any kernel call.",
+				Fix:      "Remove seccomp:unconfined. Use the default seccomp profile or a custom restricted profile.",
+			}, true
+		}
+	}
+	return Finding{}, false
 }
 
 func latestImageFinding(svc compose.Service, relCompose string) (Finding, bool) {

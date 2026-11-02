@@ -40,6 +40,12 @@ type Service struct {
 	NetworkModeLine int
 	Restart         string // value of restart: (e.g. "always", "unless-stopped")
 	RestartLine     int
+	CapAdd          []string
+	CapAddLine      int
+	CapDrop         []string
+	CapDropLine     int
+	SecurityOpt     []string
+	SecurityOptLine int
 }
 
 type PortMapping struct {
@@ -177,6 +183,30 @@ func Parse(path string) (*File, error) {
 					for _, e := range envNode.Content {
 						svc.Environment = append(svc.Environment, e.Value)
 					}
+				}
+			}
+			// cap_add
+			capAddNode := getMapValue(svcNode, "cap_add")
+			if capAddNode != nil {
+				svc.CapAddLine = capAddNode.Line
+				for _, c := range capAddNode.Content {
+					svc.CapAdd = append(svc.CapAdd, strings.ToUpper(strings.TrimSpace(c.Value)))
+				}
+			}
+			// cap_drop
+			capDropNode := getMapValue(svcNode, "cap_drop")
+			if capDropNode != nil {
+				svc.CapDropLine = capDropNode.Line
+				for _, c := range capDropNode.Content {
+					svc.CapDrop = append(svc.CapDrop, strings.ToUpper(strings.TrimSpace(c.Value)))
+				}
+			}
+			// security_opt
+			secOptNode := getMapValue(svcNode, "security_opt")
+			if secOptNode != nil {
+				svc.SecurityOptLine = secOptNode.Line
+				for _, s := range secOptNode.Content {
+					svc.SecurityOpt = append(svc.SecurityOpt, s.Value)
 				}
 			}
 			f.Services = append(f.Services, svc)

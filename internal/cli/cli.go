@@ -164,6 +164,8 @@ func Run(args []string) error {
 		return runMergeCheck(args[1:])
 	case "port-map":
 		return runPortMap(args[1:])
+	case "capabilities":
+		return runCapabilities(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -237,6 +239,7 @@ Usage:
   tasia config-check [--path .] [--format text|json] [--recursive] [--fail-on high|medium|low]
   tasia merge-check [--path .] [--format text|json] [--recursive]
   tasia port-map [--path .] [--format text|json] [--recursive]
+  tasia capabilities [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version

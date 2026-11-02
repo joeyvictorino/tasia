@@ -33,6 +33,8 @@ func Catalog() []RuleInfo {
 		// Compose — container security
 		{ID: "docker_socket_mount", Default: SeverityCritical, Title: "Docker socket mounted", Description: "/var/run/docker.sock bind-mounted into a container", Category: "compose"},
 		{ID: "privileged_container", Default: SeverityCritical, Title: "Privileged container", Description: "Container runs with privileged: true", Category: "compose"},
+		{ID: "dangerous_capability", Default: SeverityHigh, Title: "Dangerous Linux capability", Description: "cap_add grants a dangerous capability (SYS_ADMIN, NET_ADMIN, NET_RAW, SYS_PTRACE, etc.)", Category: "compose"},
+		{ID: "seccomp_disabled", Default: SeverityHigh, Title: "Seccomp profile disabled", Description: "security_opt includes seccomp:unconfined, removing syscall filtering", Category: "compose"},
 		{ID: "permissive_cors", Default: SeverityHigh, Title: "Permissive CORS", Description: "OLLAMA_ORIGINS=* or similar wildcard CORS setting", Category: "compose"},
 		{ID: "latest_image", Default: SeverityMedium, Title: "Mutable image tag", Description: "image: uses :latest or no tag", Category: "compose"},
 		{ID: "broad_bind_mount", Default: SeverityMedium, Title: "Broad writable bind mount", Description: "Broad volume like .:/app mounted writable (HIGH on agent runtimes)", Category: "compose"},

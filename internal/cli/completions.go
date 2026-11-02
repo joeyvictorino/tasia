@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -98,6 +98,7 @@ _tasia() {
         'config-check:Detect configuration conflicts across compose files'
         'merge-check:Simulate docker-compose merge and show overrides'
         'port-map:Visualize host port allocations across compose files'
+        'capabilities:Analyze container capabilities and seccomp profiles'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -346,6 +347,12 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
+                capabilities)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
             esac
             ;;
     esac
@@ -513,6 +520,10 @@ complete -c tasia -n '__fish_use_subcommand' -a 'port-map' -d 'Visualize host po
 complete -c tasia -n '__fish_seen_subcommand_from port-map' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from port-map' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from port-map' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'capabilities' -d 'Analyze container capabilities and seccomp profiles'
+complete -c tasia -n '__fish_seen_subcommand_from capabilities' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from capabilities' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from capabilities' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_use_subcommand' -a 'api' -d 'Start REST API server for programmatic scanning'
 complete -c tasia -n '__fish_seen_subcommand_from api' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from api' -l port -d 'HTTP listen port' -r
