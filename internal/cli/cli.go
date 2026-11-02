@@ -228,6 +228,10 @@ func Run(args []string) error {
 		return runWorkdir(args[1:])
 	case "copy-add":
 		return runCopyAdd(args[1:])
+	case "privileged":
+		return runPrivileged(args[1:])
+	case "workload":
+		return runWorkload(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -313,6 +317,8 @@ Usage:
   tasia labels [--path .] [--format text|json] [--recursive]
   tasia net-audit [--path .] [--format text|json] [--recursive]
   tasia init-process [--path .] [--format text|json] [--recursive]
+  tasia privileged [--path .] [--format text|json] [--recursive]
+  tasia workload [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
