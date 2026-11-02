@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph install uninstall explain rules schema init watch profile completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity install uninstall explain rules schema init watch profile completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -73,6 +73,8 @@ _tasia() {
         'migrate:Upgrade config to latest schema'
         'inventory:List stack services, ports, volumes and networks'
         'graph:Visualize service dependency graph'
+        'baseline:Manage finding baselines for drift tracking'
+        'severity:Analyze finding severity distribution and risk'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -159,6 +161,21 @@ _tasia() {
                         '--format[output format]:(text dot mermaid)' \
                         '--recursive[scan nested directories]'
                     ;;
+                baseline)
+                    _arguments \
+                        '1:subcommand:(create compare update)' \
+                        '--path[path to scan]:directory:_directories' \
+                        '--output[output file]:file:_files' \
+                        '--baseline[baseline JSON file]:file:_files' \
+                        '--format[output format]:(text json)'
+                    ;;
+                severity)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]' \
+                        '--baseline[baseline file for trend]:file:_files'
+                    ;;
             esac
             ;;
     esac
@@ -189,6 +206,8 @@ complete -c tasia -n '__fish_use_subcommand' -a 'fmt' -d 'Format and normalize .
 complete -c tasia -n '__fish_use_subcommand' -a 'migrate' -d 'Upgrade config to latest schema'
 complete -c tasia -n '__fish_use_subcommand' -a 'inventory' -d 'List stack services, ports, volumes and networks'
 complete -c tasia -n '__fish_use_subcommand' -a 'graph' -d 'Visualize service dependency graph'
+complete -c tasia -n '__fish_use_subcommand' -a 'baseline' -d 'Manage finding baselines for drift tracking'
+complete -c tasia -n '__fish_use_subcommand' -a 'severity' -d 'Analyze finding severity distribution and risk'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'
@@ -224,6 +243,15 @@ complete -c tasia -n '__fish_seen_subcommand_from inventory' -l recursive -d 'Sc
 complete -c tasia -n '__fish_seen_subcommand_from graph' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from graph' -l format -d 'Output format' -r -a 'text dot mermaid'
 complete -c tasia -n '__fish_seen_subcommand_from graph' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from baseline' -a 'create compare update' -d 'Baseline subcommand'
+complete -c tasia -n '__fish_seen_subcommand_from baseline' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from baseline' -l output -d 'Output file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from baseline' -l baseline -d 'Baseline JSON file' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from baseline' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from severity' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from severity' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from severity' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from severity' -l baseline -d 'Baseline file for trend analysis' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
