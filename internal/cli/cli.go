@@ -346,6 +346,10 @@ func Run(args []string) error {
 		return runSocketperm(args[1:])
 	case "pullpolicy":
 		return runPullpolicy(args[1:])
+	case "hostpath":
+		return runHostpath(args[1:])
+	case "netfilter":
+		return runNetfilter(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
