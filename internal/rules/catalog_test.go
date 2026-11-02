@@ -43,7 +43,7 @@ func TestCatalogFieldsPopulated(t *testing.T) {
 
 func TestCatalogCoversExpectedCount(t *testing.T) {
 	cat := Catalog()
-	if len(cat) != 27 {
-		t.Errorf("catalog has %d rules, expected 27", len(cat))
+	if len(cat) != 28 {
+		t.Errorf("catalog has %d rules, expected 28", len(cat))
 	}
 }

@@ -20,6 +20,7 @@ type Collected struct {
 	Dockerfiles        []Dockerfile
 	ReverseProxyConfigs []ReverseProxyConfig
 	KubeManifests       []KubeManifest
+	HelmValues          []HelmValues
 	OtherConfigs        []string // Modelfile etc later
 	DetectedRuntimes   []string
 	DetectedInterfaces []string
@@ -292,8 +293,17 @@ func WalkAndCollect(root string) (*Collected, error) {
 		default:
 			if strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") {
 				content, rerr := os.ReadFile(path)
-				if rerr == nil && IsKubeFile(lower, string(content)) {
-					manifests, _ := ParseKubeYAML(rel, string(content))
+				if rerr != nil {
+					break
+				}
+				s := string(content)
+				if IsHelmValuesFile(lower) && hasChartYAML(filepath.Dir(path)) {
+					hv := ParseHelmValues(rel, s)
+					if len(hv.Findings) > 0 {
+						c.HelmValues = append(c.HelmValues, hv)
+					}
+				} else if IsKubeFile(lower, s) {
+					manifests, _ := ParseKubeYAML(rel, s)
 					c.KubeManifests = append(c.KubeManifests, manifests...)
 				}
 			}
@@ -501,4 +511,13 @@ func dedupInts(is []int) []int {
 		}
 	}
 	return out
+}
+
+func hasChartYAML(dir string) bool {
+	for _, name := range []string{"Chart.yaml", "Chart.yml"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }

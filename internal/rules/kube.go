@@ -113,6 +113,46 @@ func kubeHostNetworkFindings(m collect.KubeManifest) []Finding {
 	}}
 }
 
+func helmFindings(values []collect.HelmValues) []Finding {
+	var out []Finding
+	for _, hv := range values {
+		for _, f := range hv.Findings {
+			sev, title := helmFindingSeverityAndTitle(f.KeyPath, f.Value)
+			out = append(out, Finding{
+				ID:       "helm_insecure_default",
+				Severity: sev,
+				Title:    title,
+				File:     hv.Path,
+				Line:     f.Line,
+				Evidence: fmt.Sprintf("%s=%s", f.KeyPath, f.Value),
+				Why:      "Helm values.yaml sets defaults used when the chart is installed without overrides. An insecure default means every install that doesn't explicitly tighten it ships vulnerable.",
+				Fix:      "Change the default in values.yaml to the secure value, or document that the deployer must override it.",
+			})
+		}
+	}
+	return out
+}
+
+func helmFindingSeverityAndTitle(keyPath, value string) (Severity, string) {
+	lower := strings.ToLower(keyPath)
+	switch {
+	case strings.Contains(lower, "privileged"):
+		return SeverityCritical, fmt.Sprintf("Helm default %s=%s (privileged container)", keyPath, value)
+	case strings.Contains(lower, "hostnetwork"):
+		return SeverityHigh, fmt.Sprintf("Helm default %s=%s (host network)", keyPath, value)
+	case strings.Contains(lower, "runasuser") && value == "0":
+		return SeverityHigh, fmt.Sprintf("Helm default %s=%s (runs as root)", keyPath, value)
+	case strings.Contains(lower, "runasnonroot"):
+		return SeverityHigh, fmt.Sprintf("Helm default %s=%s (allows root)", keyPath, value)
+	case strings.Contains(lower, "service") && strings.Contains(lower, "type"):
+		return SeverityHigh, fmt.Sprintf("Helm default %s=%s (external service)", keyPath, value)
+	case strings.Contains(lower, "hostpath"):
+		return SeverityHigh, fmt.Sprintf("Helm default %s=%s (host path mount)", keyPath, value)
+	default:
+		return SeverityMedium, fmt.Sprintf("Helm insecure default %s=%s", keyPath, value)
+	}
+}
+
 func isSensitiveHostPath(path string) bool {
 	sensitive := []string{
 		"/var/run/docker.sock",
