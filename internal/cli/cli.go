@@ -270,6 +270,8 @@ func Run(args []string) error {
 		return runServiceMesh(args[1:])
 	case "service-dep":
 		return runServiceDep(args[1:])
+	case "health-probe":
+		return runHealthProbe(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
