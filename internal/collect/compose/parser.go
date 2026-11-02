@@ -52,6 +52,20 @@ type Service struct {
 	// Logging fields
 	Logging     *LoggingConfig
 	LoggingLine int
+	// Resource limit fields
+	MemLimit       string
+	MemLimitLine   int
+	MemReservation string
+	MemResLine     int
+	CPUs           string
+	CPUsLine       int
+	PidsLimit      int
+	PidsLimitLine  int
+	ReadOnly       bool
+	ReadOnlyLine   int
+	// Tmpfs fields
+	Tmpfs     []string
+	TmpfsLine int
 }
 
 // Healthcheck represents the healthcheck block in a compose service.
@@ -284,6 +298,83 @@ func Parse(path string) (*File, error) {
 					}
 				}
 				svc.Logging = lc
+			}
+			// mem_limit
+			mlNode := getMapValue(svcNode, "mem_limit")
+			if mlNode != nil {
+				svc.MemLimit = mlNode.Value
+				svc.MemLimitLine = mlNode.Line
+			}
+			// mem_reservation
+			mrNode := getMapValue(svcNode, "mem_reservation")
+			if mrNode != nil {
+				svc.MemReservation = mrNode.Value
+				svc.MemResLine = mrNode.Line
+			}
+			// cpus
+			cpuNode := getMapValue(svcNode, "cpus")
+			if cpuNode != nil {
+				svc.CPUs = cpuNode.Value
+				svc.CPUsLine = cpuNode.Line
+			}
+			// pids_limit
+			pidsNode := getMapValue(svcNode, "pids_limit")
+			if pidsNode != nil {
+				if n, ok := atoiSafe(pidsNode.Value); ok {
+					svc.PidsLimit = n
+				}
+				svc.PidsLimitLine = pidsNode.Line
+			}
+			// read_only
+			roNode := getMapValue(svcNode, "read_only")
+			if roNode != nil && (roNode.Value == "true" || roNode.Value == "yes") {
+				svc.ReadOnly = true
+				svc.ReadOnlyLine = roNode.Line
+			}
+			// deploy.resources (v3 format)
+			deployNode := getMapValue(svcNode, "deploy")
+			if deployNode != nil {
+				resNode := getMapValue(deployNode, "resources")
+				if resNode != nil {
+					limNode := getMapValue(resNode, "limits")
+					if limNode != nil {
+						if svc.MemLimit == "" {
+							if v := getScalar(limNode, "memory"); v != "" {
+								svc.MemLimit = v
+							}
+						}
+						if svc.CPUs == "" {
+							if v := getScalar(limNode, "cpus"); v != "" {
+								svc.CPUs = v
+							}
+						}
+						if svc.PidsLimit == 0 {
+							if v := getScalar(limNode, "pids"); v != "" {
+								if n, ok := atoiSafe(v); ok {
+									svc.PidsLimit = n
+								}
+							}
+						}
+					}
+					resrvNode := getMapValue(resNode, "reservations")
+					if resrvNode != nil && svc.MemReservation == "" {
+						if v := getScalar(resrvNode, "memory"); v != "" {
+							svc.MemReservation = v
+						}
+					}
+				}
+			}
+			// tmpfs
+			tmpfsNode := getMapValue(svcNode, "tmpfs")
+			if tmpfsNode != nil {
+				svc.TmpfsLine = tmpfsNode.Line
+				if tmpfsNode.Kind == yaml.SequenceNode {
+					for _, t := range tmpfsNode.Content {
+						svc.Tmpfs = append(svc.Tmpfs, t.Value)
+					}
+				} else {
+					svc.Tmpfs = append(svc.Tmpfs, tmpfsNode.Value)
+				}
 			}
 			f.Services = append(f.Services, svc)
 		}

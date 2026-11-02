@@ -176,6 +176,10 @@ func Run(args []string) error {
 		return runHealthcheck(args[1:])
 	case "logging":
 		return runLogging(args[1:])
+	case "resource-limits":
+		return runResourceLimits(args[1:])
+	case "tmpfs":
+		return runTmpfs(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -255,6 +259,8 @@ Usage:
   tasia volumes [--path .] [--format text|json] [--recursive]
   tasia healthcheck [--path .] [--format text|json] [--recursive]
   tasia logging [--path .] [--format text|json] [--recursive]
+  tasia resource-limits [--path .] [--format text|json] [--recursive]
+  tasia tmpfs [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
