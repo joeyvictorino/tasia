@@ -112,6 +112,10 @@ func Run(args []string) error {
 		return runMetrics(args[1:])
 	case "tags":
 		return runTags(args[1:])
+	case "summary":
+		return runSummaryCmd(args[1:])
+	case "trends":
+		return runTrendsCmd(args[1:])
 	case "bench":
 		return runBench(args[1:])
 	case "completions", "completion":
