@@ -129,6 +129,21 @@ Rule IDs are the `id` values from `--format json` output (e.g. `exposed_inferenc
 
 The ignore policy applies to `review`, `ci` and `explain`. Suppressed findings are removed before the decision, so a BLOCKED stack can become PASS if the blocking findings are all suppressed.
 
+## `.tasiarc.yaml`
+
+Drop a `.tasiarc.yaml` (or `.tasiarc.yml`) at the root of the scanned directory to override default severities:
+
+```yaml
+severities:
+  latest_image: low          # downgrade from MEDIUM
+  exposed_inference: critical # escalate from HIGH
+  no_ai_stack_manifest: low  # you know what you're doing
+```
+
+Rule IDs are the same as in `.tasiaignore` and `--format json` output. Values must be `CRITICAL`, `HIGH`, `MEDIUM` or `LOW` (case-insensitive). Invalid severity values are silently ignored.
+
+Severity overrides apply after `.tasiaignore` suppressions and before the decision, so they affect the `--fail-on` threshold.
+
 ## What `.tasia/` contains
 
 `HARDENING_PLAN.md`, `EXECUTIVE_MEMO.md`, `ai-stack-manifest.json`, `docker-compose.hardened.override.yml`, `firewall-notes.md`, `findings.json`, `findings.toon` (compact agent-readable format), and `LLM_REVIEW.md` only after `tasia explain`. See [`docs/generated-artifacts.md`](docs/generated-artifacts.md).
@@ -155,6 +170,7 @@ flowchart LR
 | `internal/collect`, `internal/collect/compose` | tree walk, compose parsing with line numbers (yaml.v3 nodes), env key-name extraction |
 | `internal/rules` | the deterministic rules and the `Finding` model |
 | `internal/ignore` | `.tasiaignore` parser and finding suppression |
+| `internal/config` | `.tasiarc.yaml` parser for severity overrides |
 | `internal/report` | decision, terminal and JSON output, `.tasia/` artifacts |
 | `internal/llm` | redaction and the optional Ollama client |
 

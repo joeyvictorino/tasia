@@ -30,7 +30,7 @@
 
 - Kubernetes / Helm basics
 - ~~Ignore / policy file (`.tasiaignore`)~~ (done: `internal/ignore` package, supports rule IDs, file paths, globs, inline comments)
-- Configurable rule severities
+- ~~Configurable rule severities~~ (done: `.tasiarc.yaml` with `severities:` map, `internal/config` package)
 
 ## v1.0
 

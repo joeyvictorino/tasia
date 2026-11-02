@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/joeyvictorino/tasia/internal/collect"
+	"github.com/joeyvictorino/tasia/internal/config"
 	"github.com/joeyvictorino/tasia/internal/ignore"
 	"github.com/joeyvictorino/tasia/internal/llm"
 	"github.com/joeyvictorino/tasia/internal/report"
@@ -141,6 +142,11 @@ func runReview(args []string) error {
 		findings = filterFindings(findings, pol)
 	}
 
+	// Apply severity overrides from .tasiarc.yaml
+	if cfg, err := config.Load(absPath); err == nil {
+		findings = applySeverityOverrides(findings, cfg)
+	}
+
 	// Decide
 	decision, risk := report.Decide(findings, *failOn, *strict)
 
@@ -215,6 +221,10 @@ func runCI(args []string) error {
 
 	if pol, err := ignore.Load(absPath); err == nil {
 		findings = filterFindings(findings, pol)
+	}
+
+	if cfg, err := config.Load(absPath); err == nil {
+		findings = applySeverityOverrides(findings, cfg)
 	}
 
 	decision, risk := report.Decide(findings, *failOn, false)
@@ -351,6 +361,10 @@ func runExplain(args []string) error {
 		findings = filterFindings(findings, pol)
 	}
 
+	if cfg, err := config.Load(absPath); err == nil {
+		findings = applySeverityOverrides(findings, cfg)
+	}
+
 	decision, risk := report.Decide(findings, "high", false)
 
 	redacted := llm.RedactPack(decision, risk, findings)
@@ -409,4 +423,15 @@ func filterFindings(findings []rules.Finding, pol *ignore.Policy) []rules.Findin
 		}
 	}
 	return kept
+}
+
+func applySeverityOverrides(findings []rules.Finding, cfg *config.Config) []rules.Finding {
+	out := make([]rules.Finding, len(findings))
+	copy(out, findings)
+	for i := range out {
+		if override := cfg.SeverityFor(out[i].ID); override != "" && config.ValidSeverity(override) {
+			out[i].Severity = rules.Severity(override)
+		}
+	}
+	return out
 }
