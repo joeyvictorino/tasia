@@ -242,6 +242,8 @@ func Run(args []string) error {
 		return runServiceMap(args[1:])
 	case "image-age":
 		return runImageAge(args[1:])
+	case "layer-audit":
+		return runLayerAudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint service-map image-age completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit hotspots prioritize benchmark-rules api config-check merge-check port-map capabilities entropy isolation volumes healthcheck logging resource-limits tmpfs dns labels cgroups signals user-ns seccomp pid-ns ipc sysctls devices ulimits runtime depends entrypoint env-isolation build-args net-audit init-process oom restart-policy stop-grace shm-size workdir copy-add privileged workload attack-surface compose-lint service-map image-age layer-audit completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -136,6 +136,7 @@ _tasia() {
         'compose-lint:Docker-compose best practice linting'
         'service-map:Service dependency topology map'
         'image-age:Detect stale and EOL container images'
+        'layer-audit:Dockerfile layer hygiene and optimization audit'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -445,7 +446,7 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
-                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|service-map|image-age)
+                cgroups|signals|user-ns|seccomp|pid-ns|ipc|sysctls|devices|ulimits|runtime|net-audit|init-process|oom|restart-policy|stop-grace|shm-size|workdir|copy-add|privileged|workload|service-map|image-age|layer-audit)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
                         '--format[output format]:(text json)' \
@@ -494,6 +495,10 @@ complete -c tasia -n '__fish_use_subcommand' -a 'image-age' -d 'Detect stale and
 complete -c tasia -n '__fish_seen_subcommand_from image-age' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from image-age' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from image-age' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'layer-audit' -d 'Dockerfile layer hygiene and optimization audit'
+complete -c tasia -n '__fish_seen_subcommand_from layer-audit' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from layer-audit' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from layer-audit' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from service-map' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from service-map' -l format -d 'Output format' -r -a 'text json dot'
 complete -c tasia -n '__fish_seen_subcommand_from service-map' -l recursive -d 'Scan nested directories'
