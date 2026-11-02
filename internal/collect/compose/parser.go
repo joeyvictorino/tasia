@@ -142,6 +142,27 @@ type Service struct {
 	CpusetMemsLine int
 	CpuShares      int
 	CpuSharesLine  int
+	// Block I/O fields
+	BlkioWeight         int
+	BlkioWeightLine     int
+	BlkioWeightDevice   []BlkioWeightDevice
+	BlkioDeviceReadBps  []BlkioRateDevice
+	BlkioDeviceWriteBps []BlkioRateDevice
+	BlkioDeviceReadIOps []BlkioRateDevice
+	BlkioDeviceWriteIOps []BlkioRateDevice
+	BlkioConfigLine     int
+}
+
+// BlkioWeightDevice represents a per-device weight override in blkio_config.
+type BlkioWeightDevice struct {
+	Path   string
+	Weight int
+}
+
+// BlkioRateDevice represents a device rate limit in blkio_config.
+type BlkioRateDevice struct {
+	Path string
+	Rate string
 }
 
 // UlimitValue represents a ulimit with soft and hard limits.
@@ -471,6 +492,57 @@ func Parse(path string) (*File, error) {
 				}
 				svc.CpuSharesLine = cpuSharesNode.Line
 			}
+			// blkio_config
+			blkioNode := getMapValue(svcNode, "blkio_config")
+			if blkioNode != nil {
+				svc.BlkioConfigLine = blkioNode.Line
+				wNode := getMapValue(blkioNode, "weight")
+				if wNode != nil {
+					if n, ok := atoiSafe(wNode.Value); ok {
+						svc.BlkioWeight = n
+					}
+					svc.BlkioWeightLine = wNode.Line
+				}
+				wdNode := getMapValue(blkioNode, "weight_device")
+				if wdNode != nil {
+					for _, item := range seqItems(wdNode) {
+						p := getScalar(item, "path")
+						ws := getScalar(item, "weight")
+						w := 0
+						if ws != "" {
+							if n, ok := atoiSafe(ws); ok {
+								w = n
+							}
+						}
+						if p != "" {
+							svc.BlkioWeightDevice = append(svc.BlkioWeightDevice, BlkioWeightDevice{Path: p, Weight: w})
+						}
+					}
+				}
+				for _, key := range []string{"device_read_bps", "device_write_bps", "device_read_iops", "device_write_iops"} {
+					dNode := getMapValue(blkioNode, key)
+					if dNode == nil {
+						continue
+					}
+					for _, item := range seqItems(dNode) {
+						p := getScalar(item, "path")
+						r := getScalar(item, "rate")
+						if p != "" {
+							dev := BlkioRateDevice{Path: p, Rate: r}
+							switch key {
+							case "device_read_bps":
+								svc.BlkioDeviceReadBps = append(svc.BlkioDeviceReadBps, dev)
+							case "device_write_bps":
+								svc.BlkioDeviceWriteBps = append(svc.BlkioDeviceWriteBps, dev)
+							case "device_read_iops":
+								svc.BlkioDeviceReadIOps = append(svc.BlkioDeviceReadIOps, dev)
+							case "device_write_iops":
+								svc.BlkioDeviceWriteIOps = append(svc.BlkioDeviceWriteIOps, dev)
+							}
+						}
+					}
+				}
+			}
 			// pids_limit
 			pidsNode := getMapValue(svcNode, "pids_limit")
 			if pidsNode != nil {
@@ -797,6 +869,16 @@ func getScalar(node *yaml.Node, key string) string {
 		return v.Value
 	}
 	return ""
+}
+
+func seqItems(node *yaml.Node) []*yaml.Node {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.SequenceNode {
+		return node.Content
+	}
+	return nil
 }
 
 func getMapValue(node *yaml.Node, key string) *yaml.Node {
