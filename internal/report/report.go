@@ -155,16 +155,72 @@ func BuildSummary(findings []rules.Finding, filesScanned int, durationMs int64) 
 	}
 }
 
+type enrichedFinding struct {
+	ID          string         `json:"id"`
+	Severity    rules.Severity `json:"severity"`
+	Title       string         `json:"title"`
+	File        string         `json:"file"`
+	Line        int            `json:"line"`
+	Evidence    string         `json:"evidence"`
+	Why         string         `json:"why"`
+	Fix         string         `json:"fix"`
+	Remediation *remediation   `json:"remediation,omitempty"`
+}
+
+type remediation struct {
+	Summary  string   `json:"summary"`
+	Category string   `json:"category"`
+	DocURL   string   `json:"doc_url"`
+	Refs     []string `json:"refs,omitempty"`
+}
+
+var remediationRefs = map[string][]string{
+	"compose":    {"CIS Docker Benchmark 5.x", "OWASP Docker Top 10"},
+	"agent":      {"OWASP LLM Top 10 LLM04", "CIS Docker Benchmark 5.x"},
+	"dockerfile": {"CIS Docker Benchmark 4.1", "Dockerfile best practices"},
+	"proxy":      {"OWASP API Security Top 10 API2"},
+	"kubernetes": {"CIS Kubernetes Benchmark 5.2", "NSA Kubernetes Hardening Guide"},
+	"helm":       {"CIS Kubernetes Benchmark 5.2"},
+	"terraform":  {"CIS AWS/GCP/Azure Foundations Benchmark"},
+	"manifest":   {},
+}
+
+func enrichFindings(findings []rules.Finding) []enrichedFinding {
+	catalog := rules.CatalogMap()
+	out := make([]enrichedFinding, len(findings))
+	for i, f := range findings {
+		out[i] = enrichedFinding{
+			ID: f.ID, Severity: f.Severity, Title: f.Title,
+			File: f.File, Line: f.Line, Evidence: f.Evidence,
+			Why: f.Why, Fix: f.Fix,
+		}
+		info, ok := catalog[f.ID]
+		if !ok {
+			continue
+		}
+		r := &remediation{
+			Summary:  f.Fix,
+			Category: info.Category,
+			DocURL:   "https://github.com/joeyvictorino/tasia/blob/main/docs/rules.md#" + f.ID,
+		}
+		if refs, ok := remediationRefs[info.Category]; ok && len(refs) > 0 {
+			r.Refs = refs
+		}
+		out[i].Remediation = r
+	}
+	return out
+}
+
 // FindingsToJSON for --format json
 func FindingsToJSON(findings []rules.Finding, decision, risk string, summary *ScanSummary) (string, error) {
 	type out struct {
-		SchemaVersion string          `json:"schema_version"`
-		Decision      string          `json:"decision"`
-		Risk          string          `json:"risk"`
-		Summary       *ScanSummary    `json:"summary,omitempty"`
-		Findings      []rules.Finding `json:"findings"`
+		SchemaVersion string             `json:"schema_version"`
+		Decision      string             `json:"decision"`
+		Risk          string             `json:"risk"`
+		Summary       *ScanSummary       `json:"summary,omitempty"`
+		Findings      []enrichedFinding  `json:"findings"`
 	}
-	o := out{SchemaVersion: SchemaVersion, Decision: decision, Risk: risk, Summary: summary, Findings: findings}
+	o := out{SchemaVersion: SchemaVersion, Decision: decision, Risk: risk, Summary: summary, Findings: enrichFindings(findings)}
 	b, err := json.MarshalIndent(o, "", "  ")
 	return string(b), err
 }

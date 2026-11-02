@@ -1,6 +1,6 @@
 package report
 
-const SchemaVersion = "1.1.0"
+const SchemaVersion = "1.2.0"
 
 const FindingsJSONSchema = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -15,7 +15,7 @@ const FindingsJSONSchema = `{
       "type": "string",
       "description": "Semantic version of this schema (MAJOR.MINOR.PATCH). A MAJOR bump means a breaking change to the shape; MINOR adds fields; PATCH changes descriptions only.",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
-      "examples": ["1.1.0"]
+      "examples": ["1.2.0"]
     },
     "decision": {
       "type": "string",
@@ -114,6 +114,35 @@ const FindingsJSONSchema = `{
         "fix": {
           "type": "string",
           "description": "Recommended remediation."
+        },
+        "remediation": {
+          "$ref": "#/$defs/remediation",
+          "description": "Structured remediation hint with category, documentation link and compliance references."
+        }
+      }
+    },
+    "remediation": {
+      "type": "object",
+      "required": ["summary", "category", "doc_url"],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Short remediation summary (same as the fix field)."
+        },
+        "category": {
+          "type": "string",
+          "description": "Rule category (compose, agent, dockerfile, proxy, kubernetes, helm, terraform, manifest)."
+        },
+        "doc_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Link to the rule's documentation in the Tasia repository."
+        },
+        "refs": {
+          "type": "array",
+          "description": "Compliance or best-practice references (e.g. CIS Benchmark section, OWASP item).",
+          "items": { "type": "string" }
         }
       }
     },

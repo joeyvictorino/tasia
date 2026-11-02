@@ -394,6 +394,44 @@ func TestFindingsToJSONOmitsSummaryWhenNil(t *testing.T) {
 	}
 }
 
+func TestFindingsToJSONIncludesRemediation(t *testing.T) {
+	findings := []rules.Finding{{
+		ID: "exposed_inference", Severity: rules.SeverityHigh,
+		Title: "test", File: "f.yaml", Line: 1,
+		Evidence: "x=1", Why: "because", Fix: "fix it",
+	}}
+	out, err := FindingsToJSON(findings, "BLOCKED", "HIGH", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	arr, ok := parsed["findings"].([]interface{})
+	if !ok || len(arr) == 0 {
+		t.Fatal("no findings in output")
+	}
+	f0 := arr[0].(map[string]interface{})
+	rem, ok := f0["remediation"].(map[string]interface{})
+	if !ok {
+		t.Fatal("finding should have remediation object")
+	}
+	if rem["category"] != "compose" {
+		t.Errorf("remediation.category = %v, want compose", rem["category"])
+	}
+	if rem["doc_url"] == nil || rem["doc_url"] == "" {
+		t.Error("remediation.doc_url should not be empty")
+	}
+	if rem["summary"] == nil || rem["summary"] == "" {
+		t.Error("remediation.summary should not be empty")
+	}
+	refs, ok := rem["refs"].([]interface{})
+	if !ok || len(refs) == 0 {
+		t.Error("remediation.refs should have compliance references for compose category")
+	}
+}
+
 func TestExitSummaryLineNoFindings(t *testing.T) {
 	line := ExitSummaryLine(nil, 0)
 	if line != "Found 0 issue(s). Exit code: 0 (pass)" {
