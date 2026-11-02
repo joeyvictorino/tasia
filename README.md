@@ -77,7 +77,7 @@ Agent runtimes get their own rule because they are not chat windows: they execut
 ## What it does not do
 
 - It does not scan networks or running containers; it only reads files.
-- It does not analyze Dockerfiles yet. They are collected, but no rule uses them. Dockerfile `USER` and `EXPOSE` checks, Kubernetes manifests, Caddy and nginx checks, and SARIF output are on the [roadmap](docs/roadmap.md), not implemented.
+- It does not analyze Dockerfiles yet. They are collected, but no rule uses them. Dockerfile `USER` and `EXPOSE` checks, Kubernetes manifests, and Caddy and nginx checks are on the [roadmap](docs/roadmap.md), not implemented.
 - It does not edit your files, read secret values into findings, call the internet or collect telemetry. The only optional network call is `tasia explain` to a local Ollama you run.
 - It does not prove security or compliance. A PASS means no rule matched.
 - The generated `docker-compose.hardened.override.yml` is a suggestion, not a drop-in file. Compose appends `ports` lists when merging files, so apply the changes to your base file (or use the `!override` tag) and check with `docker compose config`. The file says this in its header.
@@ -85,7 +85,7 @@ Agent runtimes get their own rule because they are not chat windows: they execut
 ## Commands
 
 ```
-tasia review --path .  [--format text|json] [--fail-on critical|high|medium|low] [--no-write] [--strict]
+tasia review --path .  [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict]
 tasia ci     --path .  [--fail-on critical|high|medium|low]     # default: high
 tasia install --pre-push          # git hook that runs: tasia ci --path . --fail-on high
 tasia uninstall --pre-push
@@ -93,7 +93,7 @@ tasia explain [--path .] [--ollama MODEL] [--ollama-host HOST[:PORT]]
 tasia version
 ```
 
-- `review` reports and exits 0 when it completes, whatever the decision; use `ci` (or the pre-push hook) to gate. `--format json` prints pure JSON on stdout.
+- `review` reports and exits 0 when it completes, whatever the decision; use `ci` (or the pre-push hook) to gate. `--format json` prints pure JSON on stdout. `--format sarif` prints SARIF v2.1.0 JSON for upload to GitHub Code Scanning (see `.github/workflows/sarif.yml`).
 - `ci` exits 0 (pass), 1 (blocked at or above `--fail-on`) or 2 (tool or config error).
 - Fails closed: a compose or env file that cannot be parsed gives `Decision: ERROR` and exit 2, never PASS. An unknown `--fail-on` value is also exit 2.
 - `explain` sends only the redacted findings to a local Ollama (default `localhost:11434`) and writes `.tasia/LLM_REVIEW.md`. Without `--ollama` it only writes the redacted facts and sends nothing. `review` and `ci` never call a model.

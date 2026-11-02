@@ -17,7 +17,7 @@
 
 ## v0.2
 
-- GitHub Action + SARIF output
+- ~~GitHub Action + SARIF output~~ (done: `--format sarif`, `.github/workflows/sarif.yml`)
 - Agent-runtime follow-ups: flag auto-approve settings where a product
   exposes them in compose `environment:` (key names only), and warn when
   test or fixture directories are mounted writable into an agent service
