@@ -107,6 +107,28 @@ tasia version
 - Fails closed: a compose or env file that cannot be parsed gives `Decision: ERROR` and exit 2, never PASS. An unknown `--fail-on` value is also exit 2.
 - `explain` sends only the redacted findings to a local Ollama (default `localhost:11434`) and writes `.tasia/LLM_REVIEW.md`. Without `--ollama` it only writes the redacted facts and sends nothing. `review` and `ci` never call a model.
 
+## `.tasiaignore`
+
+Drop a `.tasiaignore` file at the root of the scanned directory to suppress known or accepted findings. One entry per line:
+
+```
+# Suppress a rule everywhere
+latest_image
+
+# Suppress all findings in a file
+docker-compose.dev.yml
+
+# Suppress a rule only in a specific file (order doesn't matter)
+exposed_inference docker-compose.dev.yml
+
+# Glob patterns work for file matching
+examples/*
+```
+
+Rule IDs are the `id` values from `--format json` output (e.g. `exposed_inference`, `latest_image`, `docker_socket_mount`). A bare word containing only `[a-z0-9_]` is treated as a rule ID; anything else is a file pattern. Lines starting with `#` are comments. Inline comments work too: `latest_image  # acceptable for dev`.
+
+The ignore policy applies to `review`, `ci` and `explain`. Suppressed findings are removed before the decision, so a BLOCKED stack can become PASS if the blocking findings are all suppressed.
+
 ## What `.tasia/` contains
 
 `HARDENING_PLAN.md`, `EXECUTIVE_MEMO.md`, `ai-stack-manifest.json`, `docker-compose.hardened.override.yml`, `firewall-notes.md`, `findings.json`, `findings.toon` (compact agent-readable format), and `LLM_REVIEW.md` only after `tasia explain`. See [`docs/generated-artifacts.md`](docs/generated-artifacts.md).
@@ -118,7 +140,8 @@ flowchart LR
   F["compose, .env*, Dockerfile files"] --> C["collect: walk tree, parse YAML nodes, record env key names"]
   C -- "unparseable file" --> X["Decision ERROR, exit 2"]
   C --> R["rules: 22 deterministic checks"]
-  R --> D["report: Decide PASS or BLOCKED"]
+  R --> I["ignore: apply .tasiaignore suppressions"]
+  I --> D["report: Decide PASS or BLOCKED"]
   D --> T["terminal summary or JSON"]
   D --> P[".tasia/ hardening pack"]
   D --> G["ci and pre-push: exit 0 or 1"]
@@ -131,6 +154,7 @@ flowchart LR
 | `internal/cli` | command dispatch, flags, exit codes, git hook install |
 | `internal/collect`, `internal/collect/compose` | tree walk, compose parsing with line numbers (yaml.v3 nodes), env key-name extraction |
 | `internal/rules` | the deterministic rules and the `Finding` model |
+| `internal/ignore` | `.tasiaignore` parser and finding suppression |
 | `internal/report` | decision, terminal and JSON output, `.tasia/` artifacts |
 | `internal/llm` | redaction and the optional Ollama client |
 
