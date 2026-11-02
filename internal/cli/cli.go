@@ -296,6 +296,10 @@ func Run(args []string) error {
 		return runIpcNS(args[1:])
 	case "net-ns":
 		return runNetNS(args[1:])
+	case "cgroup-ns":
+		return runCgroupNS(args[1:])
+	case "mnt-ns":
+		return runMntNS(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
