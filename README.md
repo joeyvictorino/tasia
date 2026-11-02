@@ -105,10 +105,12 @@ tasia install --pre-push          # git hook that runs: tasia ci --path . --fail
 tasia uninstall --pre-push
 tasia explain [--path .] [--ollama MODEL] [--ollama-host HOST[:PORT]]
 tasia rules  [--format text|json]
+tasia schema
 tasia version
 ```
 
 - `review` reports and exits 0 when it completes, whatever the decision; use `ci` (or the pre-push hook) to gate. `--format json` prints pure JSON on stdout. `--format sarif` prints SARIF v2.1.0 JSON for upload to GitHub Code Scanning (see `.github/workflows/sarif.yml`).
+- `schema` prints the JSON Schema that describes the `--format json` output (see [`docs/findings-schema.json`](docs/findings-schema.json)). Use it to validate output or generate types in other languages.
 - `ci` exits 0 (pass), 1 (blocked at or above `--fail-on`) or 2 (tool or config error).
 - Fails closed: a compose or env file that cannot be parsed gives `Decision: ERROR` and exit 2, never PASS. An unknown `--fail-on` value is also exit 2.
 - `explain` sends only the redacted findings to a local Ollama (default `localhost:11434`) and writes `.tasia/LLM_REVIEW.md`. Without `--ollama` it only writes the redacted facts and sends nothing. `review` and `ci` never call a model.

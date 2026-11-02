@@ -34,4 +34,5 @@
 
 ## v1.0
 
-Stable rule IDs, findings JSON schema, documented public API, versioned rule catalog.
+- ~~Stable rule IDs, findings JSON schema~~ (done: `schema_version` field in JSON output, `tasia schema` command, `docs/findings-schema.json`)
+- Documented public API, versioned rule catalog.

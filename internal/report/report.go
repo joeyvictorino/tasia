@@ -98,11 +98,12 @@ func ErrorJSON(errs []collect.ConfigError) string {
 		Error string `json:"error"`
 	}
 	out := struct {
-		Decision    string          `json:"decision"`
-		Risk        string          `json:"risk"`
-		ParseErrors []parseError    `json:"parse_errors"`
-		Findings    []rules.Finding `json:"findings"`
-	}{Decision: "ERROR", Risk: "UNKNOWN", Findings: []rules.Finding{}}
+		SchemaVersion string          `json:"schema_version"`
+		Decision      string          `json:"decision"`
+		Risk          string          `json:"risk"`
+		ParseErrors   []parseError    `json:"parse_errors"`
+		Findings      []rules.Finding `json:"findings"`
+	}{SchemaVersion: SchemaVersion, Decision: "ERROR", Risk: "UNKNOWN", Findings: []rules.Finding{}}
 	for _, e := range errs {
 		out.ParseErrors = append(out.ParseErrors, parseError{Path: e.Path, Error: e.Err})
 	}
@@ -113,11 +114,12 @@ func ErrorJSON(errs []collect.ConfigError) string {
 // FindingsToJSON for --format json
 func FindingsToJSON(findings []rules.Finding, decision, risk string) (string, error) {
 	type out struct {
-		Decision string          `json:"decision"`
-		Risk     string          `json:"risk"`
-		Findings []rules.Finding `json:"findings"`
+		SchemaVersion string          `json:"schema_version"`
+		Decision      string          `json:"decision"`
+		Risk          string          `json:"risk"`
+		Findings      []rules.Finding `json:"findings"`
 	}
-	o := out{Decision: decision, Risk: risk, Findings: findings}
+	o := out{SchemaVersion: SchemaVersion, Decision: decision, Risk: risk, Findings: findings}
 	b, err := json.MarshalIndent(o, "", "  ")
 	return string(b), err
 }

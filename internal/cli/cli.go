@@ -57,6 +57,8 @@ func Run(args []string) error {
 		return runExplain(args[1:])
 	case "rules":
 		return runRules(args[1:])
+	case "schema":
+		return runSchema(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
@@ -92,6 +94,7 @@ Usage:
   tasia uninstall --pre-push
   tasia explain [--path .] [--ollama llama3.1] [--ollama-host localhost:11434]
   tasia rules [--format text|json]
+  tasia schema
   tasia version
   tasia help
 
@@ -470,5 +473,10 @@ func runRules(args []string) error {
 		}
 		fmt.Printf("\n%d rules total\n", len(catalog))
 	}
+	return nil
+}
+
+func runSchema(_ []string) error {
+	fmt.Println(report.FindingsJSONSchema)
 	return nil
 }
