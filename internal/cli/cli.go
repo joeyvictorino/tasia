@@ -122,6 +122,10 @@ func Run(args []string) error {
 		return runDeps(args[1:])
 	case "matrix":
 		return runMatrix(args[1:])
+	case "compliance":
+		return runCompliance(args[1:])
+	case "coverage":
+		return runCoverage(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -186,6 +190,8 @@ Usage:
   tasia history [list|record|clear] [--path .] [--last N] [--format text|json]
   tasia metrics --dir DIR [--format text|json]
   tasia tags [list|add|remove] [--path .] [--rule RULE] [--tag TAG] [--note TEXT]
+  tasia compliance [--path .] [--framework all|SOC2|NIST-AI-RMF|OWASP-LLM-Top10] [--format text|json] [--recursive]
+  tasia coverage [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version

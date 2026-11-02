@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -77,6 +77,8 @@ _tasia() {
         'severity:Analyze finding severity distribution and risk'
         'lint:Check config files for common mistakes'
         'doctor:Check environment readiness'
+        'compliance:Map findings to compliance frameworks'
+        'coverage:Show rule coverage report'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -188,6 +190,19 @@ _tasia() {
                         '--path[directory to check]:directory:_directories' \
                         '--format[output format]:(text json)'
                     ;;
+                compliance)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--framework[compliance framework]:(all SOC2 NIST-AI-RMF OWASP-LLM-Top10)' \
+                        '--recursive[scan nested directories]'
+                    ;;
+                coverage)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--recursive[scan nested directories]'
+                    ;;
             esac
             ;;
     esac
@@ -222,6 +237,8 @@ complete -c tasia -n '__fish_use_subcommand' -a 'baseline' -d 'Manage finding ba
 complete -c tasia -n '__fish_use_subcommand' -a 'severity' -d 'Analyze finding severity distribution and risk'
 complete -c tasia -n '__fish_use_subcommand' -a 'lint' -d 'Check config files for common mistakes'
 complete -c tasia -n '__fish_use_subcommand' -a 'doctor' -d 'Check environment readiness'
+complete -c tasia -n '__fish_use_subcommand' -a 'compliance' -d 'Map findings to compliance frameworks'
+complete -c tasia -n '__fish_use_subcommand' -a 'coverage' -d 'Show rule coverage report'
 complete -c tasia -n '__fish_use_subcommand' -a 'completions' -d 'Generate shell completions'
 complete -c tasia -n '__fish_use_subcommand' -a 'version' -d 'Show version info'
 complete -c tasia -n '__fish_use_subcommand' -a 'help' -d 'Show usage'
@@ -270,6 +287,13 @@ complete -c tasia -n '__fish_seen_subcommand_from lint' -l path -d 'Directory to
 complete -c tasia -n '__fish_seen_subcommand_from lint' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from doctor' -l path -d 'Directory to check' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from doctor' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from compliance' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from compliance' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from compliance' -l framework -d 'Compliance framework' -r -a 'all SOC2 NIST-AI-RMF OWASP-LLM-Top10'
+complete -c tasia -n '__fish_seen_subcommand_from compliance' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_seen_subcommand_from coverage' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from coverage' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from coverage' -l recursive -d 'Scan nested directories'
 complete -c tasia -n '__fish_seen_subcommand_from completions' -l shell -d 'Shell type' -r -a 'bash zsh fish'
 `
 
