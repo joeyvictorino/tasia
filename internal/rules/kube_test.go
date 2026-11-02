@@ -211,6 +211,52 @@ func TestKubeHostPathReadOnly(t *testing.T) {
 	}
 }
 
+func TestKubeNetworkPolicyAbsent(t *testing.T) {
+	c := &collect.Collected{
+		KubeManifests: []collect.KubeManifest{
+			{Path: "deploy.yaml", Kind: "Deployment", Name: "ollama"},
+		},
+		HasNetworkPolicy: false,
+	}
+	fs := kubeNetworkPolicyFinding(c)
+	if len(fs) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(fs))
+	}
+	if fs[0].ID != "kube_no_network_policy" {
+		t.Errorf("expected kube_no_network_policy, got %s", fs[0].ID)
+	}
+	if fs[0].Severity != SeverityMedium {
+		t.Errorf("severity: got %s, want MEDIUM", fs[0].Severity)
+	}
+}
+
+func TestKubeNetworkPolicyPresent(t *testing.T) {
+	c := &collect.Collected{
+		KubeManifests: []collect.KubeManifest{
+			{Path: "deploy.yaml", Kind: "Deployment", Name: "ollama"},
+			{Path: "netpol.yaml", Kind: "NetworkPolicy", Name: "deny-all"},
+		},
+		HasNetworkPolicy: true,
+	}
+	fs := kubeNetworkPolicyFinding(c)
+	if len(fs) != 0 {
+		t.Errorf("expected no findings when NetworkPolicy exists, got %d", len(fs))
+	}
+}
+
+func TestKubeNetworkPolicyNoWorkloads(t *testing.T) {
+	c := &collect.Collected{
+		KubeManifests: []collect.KubeManifest{
+			{Path: "svc.yaml", Kind: "Service", Name: "ollama-svc"},
+		},
+		HasNetworkPolicy: false,
+	}
+	fs := kubeNetworkPolicyFinding(c)
+	if len(fs) != 0 {
+		t.Errorf("expected no findings when no workloads exist, got %d", len(fs))
+	}
+}
+
 func TestKubeStackIntegration(t *testing.T) {
 	dir, err := filepath.Abs(filepath.Join("..", "..", "testdata", "kube-stack"))
 	if err != nil {
@@ -232,7 +278,7 @@ func TestKubeStackIntegration(t *testing.T) {
 
 	want := []string{
 		"kube_exposed_service", "kube_privileged", "kube_run_as_root",
-		"kube_host_network", "kube_host_path",
+		"kube_host_network", "kube_host_path", "kube_no_network_policy",
 	}
 	for _, id := range want {
 		if !seen[id] {

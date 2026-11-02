@@ -57,6 +57,7 @@ func Catalog() []RuleInfo {
 		{ID: "kube_run_as_root", Default: SeverityHigh, Title: "Kubernetes container runs as root", Description: "runAsUser: 0 or runAsNonRoot: false on a container", Category: "kubernetes"},
 		{ID: "kube_host_network", Default: SeverityHigh, Title: "Kubernetes pod on host network", Description: "hostNetwork: true puts pod on the host's network stack", Category: "kubernetes"},
 		{ID: "kube_host_path", Default: SeverityHigh, Title: "Kubernetes hostPath mount", Description: "hostPath volume gives container direct host filesystem access (CRITICAL for sensitive paths)", Category: "kubernetes"},
+		{ID: "kube_no_network_policy", Default: SeverityMedium, Title: "Kubernetes workloads without NetworkPolicy", Description: "Workloads defined without a NetworkPolicy restricting pod-to-pod and egress traffic", Category: "kubernetes"},
 
 		// Helm
 		{ID: "helm_insecure_default", Default: SeverityHigh, Title: "Helm values.yaml insecure default", Description: "Insecure default in values.yaml (privileged, hostNetwork, runAsUser 0, LoadBalancer/NodePort, hostPath)", Category: "helm"},

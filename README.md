@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest and Helm `values.yaml` files, applies 29 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
+Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest and Helm `values.yaml` files, applies 30 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -83,6 +83,7 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 | Kubernetes container running as root (`runAsUser: 0` or `runAsNonRoot: false`) | HIGH |
 | Kubernetes pod with `hostNetwork: true` | HIGH |
 | Kubernetes hostPath volume mount (CRITICAL for sensitive paths like Docker socket) | HIGH–CRITICAL |
+| Kubernetes workloads without a NetworkPolicy | MEDIUM |
 | Helm `values.yaml` insecure defaults (privileged, hostNetwork, runAsUser 0, LoadBalancer/NodePort, hostPath) | CRITICAL–HIGH |
 | No `ai-stack-manifest.json` | LOW |
 

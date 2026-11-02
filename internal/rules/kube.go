@@ -113,6 +113,38 @@ func kubeHostNetworkFindings(m collect.KubeManifest) []Finding {
 	}}
 }
 
+func kubeNetworkPolicyFinding(c *collect.Collected) []Finding {
+	if c.HasNetworkPolicy {
+		return nil
+	}
+	hasWorkload := false
+	var firstWorkloadPath string
+	var firstWorkloadLine int
+	for _, m := range c.KubeManifests {
+		switch m.Kind {
+		case "Deployment", "StatefulSet", "DaemonSet", "Pod", "Job", "CronJob":
+			if !hasWorkload {
+				hasWorkload = true
+				firstWorkloadPath = m.Path
+				firstWorkloadLine = 1
+			}
+		}
+	}
+	if !hasWorkload {
+		return nil
+	}
+	return []Finding{{
+		ID:       "kube_no_network_policy",
+		Severity: SeverityMedium,
+		Title:    "Kubernetes workloads without NetworkPolicy",
+		File:     firstWorkloadPath,
+		Line:     firstWorkloadLine,
+		Evidence: "no NetworkPolicy resource found alongside workload manifests",
+		Why:      "Without a NetworkPolicy, all pods can communicate freely with each other and with external endpoints. In a multi-service AI stack this means a compromised inference pod can reach the vector database, credential stores and the Kubernetes API server.",
+		Fix:      "Define a NetworkPolicy that restricts ingress and egress to the minimum required by each workload. Start with a deny-all default and open only the needed paths.",
+	}}
+}
+
 func helmFindings(values []collect.HelmValues) []Finding {
 	var out []Finding
 	for _, hv := range values {
