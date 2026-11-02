@@ -12,7 +12,7 @@ const bashCompletion = `_tasia() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status completions version help"
+    commands="review diff check ci fix export validate report compare fmt migrate inventory graph baseline severity lint doctor install uninstall explain rules schema init watch profile compliance coverage snapshot drift policy audit-trail network secrets-scan sbom risk-matrix changelog status config-test env-audit completions version help"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
@@ -89,6 +89,8 @@ _tasia() {
         'secrets-scan:Deep secret detection across config files'
         'changelog:Auto-generate security changelog from audit trail'
         'status:Security posture dashboard with grade and metrics'
+        'config-test:Validate configuration file against rule catalog'
+        'env-audit:Audit environment variables across config files'
         'completions:Generate shell completions'
         'version:Show version info'
         'help:Show usage'
@@ -250,6 +252,17 @@ _tasia() {
                         '--format[output format]:(text json)' \
                         '--recursive[scan nested directories]'
                     ;;
+                config-test)
+                    _arguments \
+                        '--config[config file path]:file:_files' \
+                        '--format[output format]:(text json)'
+                    ;;
+                env-audit)
+                    _arguments \
+                        '--path[path to scan]:directory:_directories' \
+                        '--format[output format]:(text json)' \
+                        '--secrets-only[show only secret-looking variables]'
+                    ;;
                 policy)
                     _arguments \
                         '--path[path to scan]:directory:_directories' \
@@ -396,6 +409,13 @@ complete -c tasia -n '__fish_seen_subcommand_from changelog' -l limit -d 'Max en
 complete -c tasia -n '__fish_seen_subcommand_from status' -l path -d 'Path to scan' -r -F
 complete -c tasia -n '__fish_seen_subcommand_from status' -l format -d 'Output format' -r -a 'text json'
 complete -c tasia -n '__fish_seen_subcommand_from status' -l recursive -d 'Scan nested directories'
+complete -c tasia -n '__fish_use_subcommand' -a 'config-test' -d 'Validate configuration file'
+complete -c tasia -n '__fish_use_subcommand' -a 'env-audit' -d 'Audit environment variables'
+complete -c tasia -n '__fish_seen_subcommand_from config-test' -l config -d 'Config file path' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from config-test' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from env-audit' -l path -d 'Path to scan' -r -F
+complete -c tasia -n '__fish_seen_subcommand_from env-audit' -l format -d 'Output format' -r -a 'text json'
+complete -c tasia -n '__fish_seen_subcommand_from env-audit' -l secrets-only -d 'Show only secret-looking variables'
 complete -c tasia -n '__fish_use_subcommand' -a 'policy' -d 'Generate security policy document'
 complete -c tasia -n '__fish_use_subcommand' -a 'audit-trail' -d 'Manage append-only scan history log'
 complete -c tasia -n '__fish_seen_subcommand_from policy' -l path -d 'Path to scan' -r -F

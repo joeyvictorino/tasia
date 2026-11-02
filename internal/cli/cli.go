@@ -138,6 +138,10 @@ func Run(args []string) error {
 		return runChangelog(args[1:])
 	case "status":
 		return runStatus(args[1:])
+	case "config-test":
+		return runConfigTest(args[1:])
+	case "env-audit":
+		return runEnvAudit(args[1:])
 	case "sbom":
 		return runSBOM(args[1:])
 	case "risk-matrix":
