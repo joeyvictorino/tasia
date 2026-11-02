@@ -212,6 +212,10 @@ func Run(args []string) error {
 		return runEnvIsolation(args[1:])
 	case "build-args":
 		return runBuildArgs(args[1:])
+	case "net-audit":
+		return runNetAudit(args[1:])
+	case "init-process":
+		return runInitProcess(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
@@ -295,6 +299,8 @@ Usage:
   tasia tmpfs [--path .] [--format text|json] [--recursive]
   tasia dns [--path .] [--format text|json] [--recursive]
   tasia labels [--path .] [--format text|json] [--recursive]
+  tasia net-audit [--path .] [--format text|json] [--recursive]
+  tasia init-process [--path .] [--format text|json] [--recursive]
   tasia completions --shell bash|zsh|fish
   tasia schema
   tasia version
