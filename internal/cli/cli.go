@@ -72,6 +72,8 @@ func Run(args []string) error {
 		return runInit(args[1:])
 	case "watch":
 		return runWatch(args[1:])
+	case "profile":
+		return runProfile(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
