@@ -312,6 +312,10 @@ func Run(args []string) error {
 		return runImagePin(args[1:])
 	case "graceful":
 		return runGraceful(args[1:])
+	case "cpuset":
+		return runCpuset(args[1:])
+	case "tty":
+		return runTty(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
