@@ -75,6 +75,7 @@ func Evaluate(c *collect.Collected) []Finding {
 	findings = append(findings, kubeFindings(c.KubeManifests)...)
 	findings = append(findings, kubeNetworkPolicyFinding(c)...)
 	findings = append(findings, helmFindings(c.HelmValues)...)
+	findings = append(findings, terraformFindings(c.TerraformFiles)...)
 	findings = append(findings, missingManifestFinding(c)...)
 
 	return dedupeFindings(findings)

@@ -26,6 +26,7 @@ type Collected struct {
 	ReverseProxyConfigs []ReverseProxyConfig
 	KubeManifests       []KubeManifest
 	HelmValues          []HelmValues
+	TerraformFiles      []TerraformFile
 	OtherConfigs        []string // Modelfile etc later
 	DetectedRuntimes   []string
 	DetectedInterfaces []string
@@ -310,6 +311,12 @@ func WalkAndCollect(root string) (*Collected, error) {
 			c.ReverseProxyConfigs = append(c.ReverseProxyConfigs, ParseNginxConf(rel, string(content)))
 		case lower == "modelfile":
 			c.OtherConfigs = append(c.OtherConfigs, rel)
+		case strings.HasSuffix(lower, ".tf"):
+			content, _ := os.ReadFile(path)
+			tf := ParseTerraformFile(rel, string(content))
+			if len(tf.SecurityGroups) > 0 || len(tf.S3Buckets) > 0 || len(tf.IAMPolicies) > 0 {
+				c.TerraformFiles = append(c.TerraformFiles, tf)
+			}
 		case lower == "ai-stack-manifest.json":
 			c.HasManifest = true
 		default:
