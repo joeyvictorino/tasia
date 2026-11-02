@@ -69,5 +69,17 @@ func Catalog() []RuleInfo {
 		{ID: "tf_s3_public_acl", Default: SeverityHigh, Title: "S3 bucket with public ACL", Description: "S3 bucket uses public-read or public-read-write ACL", Category: "terraform"},
 		{ID: "tf_iam_admin_access", Default: SeverityCritical, Title: "IAM policy grants unrestricted admin access", Description: "IAM policy with Effect=Allow actions=[*] resources=[*]", Category: "terraform"},
 		{ID: "tf_iam_star_actions", Default: SeverityHigh, Title: "IAM policy grants all actions", Description: "IAM policy with Effect=Allow actions=[*]", Category: "terraform"},
+
+		// Terraform — GCP
+		{ID: "tf_gcp_firewall_ingress_all", Default: SeverityCritical, Title: "GCP firewall allows all inbound traffic", Description: "GCP compute firewall with source_ranges 0.0.0.0/0 and all ports", Category: "terraform"},
+		{ID: "tf_gcp_firewall_ingress_sensitive", Default: SeverityHigh, Title: "GCP firewall exposes sensitive port to internet", Description: "GCP compute firewall with source_ranges 0.0.0.0/0 on SSH, database, or admin port", Category: "terraform"},
+		{ID: "tf_gcp_firewall_ingress_wide", Default: SeverityMedium, Title: "GCP firewall allows internet ingress", Description: "GCP compute firewall with source_ranges 0.0.0.0/0 on a non-sensitive port", Category: "terraform"},
+		{ID: "tf_gcp_storage_public", Default: SeverityHigh, Title: "GCP storage bucket with public access", Description: "GCS bucket ACL or IAM binding grants allUsers or allAuthenticatedUsers", Category: "terraform"},
+
+		// Terraform — Azure
+		{ID: "tf_azure_nsg_ingress_all", Default: SeverityCritical, Title: "Azure NSG allows all inbound traffic", Description: "Azure network security rule with source * and all ports", Category: "terraform"},
+		{ID: "tf_azure_nsg_ingress_sensitive", Default: SeverityHigh, Title: "Azure NSG exposes sensitive port to internet", Description: "Azure network security rule with internet source on SSH, database, or admin port", Category: "terraform"},
+		{ID: "tf_azure_nsg_ingress_wide", Default: SeverityMedium, Title: "Azure NSG allows internet ingress", Description: "Azure network security rule with internet source on a non-sensitive port", Category: "terraform"},
+		{ID: "tf_azure_storage_public", Default: SeverityHigh, Title: "Azure storage account allows public blob access", Description: "Azure storage account with allow_blob_public_access = true", Category: "terraform"},
 	}
 }

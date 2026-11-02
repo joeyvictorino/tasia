@@ -3,7 +3,7 @@
 [![test](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml/badge.svg)](https://github.com/joeyvictorino/tasia/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/github/license/joeyvictorino/tasia)](LICENSE)
 
-Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest, Helm `values.yaml` and Terraform `.tf` files, applies 36 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
+Tasia is a static gate for self-hosted AI stacks, written in Go. It reads Docker Compose, `.env*`, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest, Helm `values.yaml` and Terraform `.tf` files, applies 44 deterministic rules (inference APIs, chat UIs, vector databases, data stores and agent runtimes published on every interface, mounted Docker socket, privileged containers, wildcard CORS, mutable image tags, writable project mounts on agent runtimes, auto-approve/code-execution settings on agent runtimes and similar), and reports each finding with `file:line`, why it matters and a fix. It blocks a push or a CI job on a severity threshold and writes a hardening pack to `.tasia/` without touching your sources. It never reads secret values into findings, never calls the internet, and fails closed on anything it cannot parse. It exists because local models, UIs and vector databases are routinely started with default ports open on all interfaces, and "private AI" is only private if the exposure is checked.
 
 ![tasia reviewing a messy Ollama stack: BLOCKED with file:line findings, a hardened compose override, then a clean pass](docs/demo.gif)
 
@@ -91,6 +91,14 @@ curl -sSfL "https://github.com/joeyvictorino/tasia/releases/download/${VERSION}/
 | Terraform S3 bucket with `public-read` or `public-read-write` ACL | HIGH |
 | Terraform IAM policy with `Action: *` and `Resource: *` (full admin) | CRITICAL |
 | Terraform IAM policy with `Action: *` (all actions) | HIGH |
+| GCP `google_compute_firewall` allowing all inbound traffic (`0.0.0.0/0` with all ports) | CRITICAL |
+| GCP `google_compute_firewall` exposing sensitive port (SSH, DB, Docker daemon) to internet | HIGH |
+| GCP `google_compute_firewall` with any internet ingress (`0.0.0.0/0`) | MEDIUM |
+| GCP storage bucket granting `allUsers` or `allAuthenticatedUsers` | HIGH |
+| Azure network security rule allowing all inbound traffic (`*` with all ports) | CRITICAL |
+| Azure network security rule exposing sensitive port to internet | HIGH |
+| Azure network security rule with any internet ingress | MEDIUM |
+| Azure storage account with `allow_blob_public_access = true` | HIGH |
 | No `ai-stack-manifest.json` | LOW |
 
 Exact match rules, ports and image substrings are in [`docs/rules.md`](docs/rules.md). A port bound to `127.0.0.1`, `localhost` or `::1` is treated as safe.

@@ -13,6 +13,10 @@ func terraformFindings(files []collect.TerraformFile) []Finding {
 		out = append(out, sgFindings(tf)...)
 		out = append(out, s3Findings(tf)...)
 		out = append(out, iamFindings(tf)...)
+		out = append(out, gcpFirewallFindings(tf)...)
+		out = append(out, gcpStorageFindings(tf)...)
+		out = append(out, azureNSGFindings(tf)...)
+		out = append(out, azureStorageFindings(tf)...)
 	}
 	return out
 }
@@ -87,6 +91,170 @@ func s3Findings(tf collect.TerraformFile) []Finding {
 				Evidence: fmt.Sprintf("acl = %q on %s", b.ACL, b.ResourceName),
 				Why:      "Public S3 buckets are a top source of data leaks",
 				Fix:      "Set acl = \"private\" and add an aws_s3_bucket_public_access_block",
+			})
+		}
+	}
+	return out
+}
+
+func gcpFirewallFindings(tf collect.TerraformFile) []Finding {
+	var out []Finding
+	for _, fw := range tf.GCPFirewalls {
+		if !strings.EqualFold(fw.Direction, "INGRESS") {
+			continue
+		}
+		for _, src := range fw.SourceRanges {
+			if src != "0.0.0.0/0" && src != "::/0" {
+				continue
+			}
+			if fw.AllPorts {
+				out = append(out, Finding{
+					ID:       "tf_gcp_firewall_ingress_all",
+					Severity: SeverityCritical,
+					Title:    "GCP firewall allows all inbound traffic",
+					File:     tf.Path,
+					Line:     fw.Line,
+					Evidence: fmt.Sprintf("source_ranges includes %s with all ports on %s", src, fw.ResourceName),
+					Why:      "Unrestricted inbound access exposes every port to the internet",
+					Fix:      "Restrict source_ranges to known IPs and specify allowed ports",
+				})
+			} else if gcpHasSensitivePort(fw.Ports) {
+				out = append(out, Finding{
+					ID:       "tf_gcp_firewall_ingress_sensitive",
+					Severity: SeverityHigh,
+					Title:    "GCP firewall exposes sensitive port to internet",
+					File:     tf.Path,
+					Line:     fw.Line,
+					Evidence: fmt.Sprintf("source_ranges includes %s on ports %v", src, fw.Ports),
+					Why:      "Database, SSH, or admin ports open to 0.0.0.0/0 invite brute-force and exploitation",
+					Fix:      "Restrict source_ranges to known IPs or use IAP/VPN",
+				})
+			} else {
+				out = append(out, Finding{
+					ID:       "tf_gcp_firewall_ingress_wide",
+					Severity: SeverityMedium,
+					Title:    "GCP firewall allows internet ingress",
+					File:     tf.Path,
+					Line:     fw.Line,
+					Evidence: fmt.Sprintf("source_ranges includes %s on ports %v", src, fw.Ports),
+					Why:      "Ingress from 0.0.0.0/0 should be intentional and minimized",
+					Fix:      "Verify this port must be public; restrict if not",
+				})
+			}
+		}
+	}
+	return out
+}
+
+func gcpHasSensitivePort(ports []string) bool {
+	for _, p := range ports {
+		if isSensitivePort(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func gcpStorageFindings(tf collect.TerraformFile) []Finding {
+	var out []Finding
+	for _, acl := range tf.GCPStorageACLs {
+		public := false
+		detail := ""
+		if acl.Entity != "" {
+			e := strings.ToLower(acl.Entity)
+			if strings.Contains(e, "allusers") || strings.Contains(e, "allauthenticatedusers") {
+				public = true
+				detail = fmt.Sprintf("entity = %q on %s", acl.Entity, acl.ResourceName)
+			}
+		}
+		if acl.Member != "" {
+			m := strings.ToLower(acl.Member)
+			if m == "allusers" || m == "allauthenticatedusers" {
+				public = true
+				detail = fmt.Sprintf("member = %q on %s", acl.Member, acl.ResourceName)
+			}
+		}
+		if public {
+			out = append(out, Finding{
+				ID:       "tf_gcp_storage_public",
+				Severity: SeverityHigh,
+				Title:    "GCP storage bucket with public access",
+				File:     tf.Path,
+				Line:     acl.Line,
+				Evidence: detail,
+				Why:      "Public storage buckets are a top source of data leaks",
+				Fix:      "Remove allUsers/allAuthenticatedUsers and use IAM for access control",
+			})
+		}
+	}
+	return out
+}
+
+func azureNSGFindings(tf collect.TerraformFile) []Finding {
+	var out []Finding
+	for _, rule := range tf.AzureNSGRules {
+		if !strings.EqualFold(rule.Direction, "Inbound") {
+			continue
+		}
+		if !strings.EqualFold(rule.Access, "Allow") {
+			continue
+		}
+		src := rule.SourceAddressPrefix
+		if src != "*" && src != "0.0.0.0/0" && src != "Internet" {
+			continue
+		}
+		port := rule.DestinationPortRange
+		if port == "*" {
+			out = append(out, Finding{
+				ID:       "tf_azure_nsg_ingress_all",
+				Severity: SeverityCritical,
+				Title:    "Azure NSG allows all inbound traffic",
+				File:     tf.Path,
+				Line:     rule.Line,
+				Evidence: fmt.Sprintf("source_address_prefix = %q destination_port_range = %q on %s", src, port, rule.ResourceName),
+				Why:      "Unrestricted inbound access exposes every port to the internet",
+				Fix:      "Restrict source_address_prefix to known IPs and limit port ranges",
+			})
+		} else if isSensitivePort(port) {
+			out = append(out, Finding{
+				ID:       "tf_azure_nsg_ingress_sensitive",
+				Severity: SeverityHigh,
+				Title:    "Azure NSG exposes sensitive port to internet",
+				File:     tf.Path,
+				Line:     rule.Line,
+				Evidence: fmt.Sprintf("source_address_prefix = %q destination_port_range = %q on %s", src, port, rule.ResourceName),
+				Why:      "Database, SSH, or admin ports open to the internet invite brute-force and exploitation",
+				Fix:      "Restrict source_address_prefix to known IPs or use a bastion/VPN",
+			})
+		} else {
+			out = append(out, Finding{
+				ID:       "tf_azure_nsg_ingress_wide",
+				Severity: SeverityMedium,
+				Title:    "Azure NSG allows internet ingress",
+				File:     tf.Path,
+				Line:     rule.Line,
+				Evidence: fmt.Sprintf("source_address_prefix = %q destination_port_range = %q on %s", src, port, rule.ResourceName),
+				Why:      "Ingress from the internet should be intentional and minimized",
+				Fix:      "Verify this port must be public; restrict if not",
+			})
+		}
+	}
+	return out
+}
+
+func azureStorageFindings(tf collect.TerraformFile) []Finding {
+	var out []Finding
+	for _, sa := range tf.AzureStorageAccounts {
+		if sa.AllowBlobPublicAccess {
+			out = append(out, Finding{
+				ID:       "tf_azure_storage_public",
+				Severity: SeverityHigh,
+				Title:    "Azure storage account allows public blob access",
+				File:     tf.Path,
+				Line:     sa.Line,
+				Evidence: fmt.Sprintf("allow_blob_public_access = true on %s", sa.ResourceName),
+				Why:      "Public blob access can expose sensitive data to the internet",
+				Fix:      "Set allow_blob_public_access = false",
 			})
 		}
 	}

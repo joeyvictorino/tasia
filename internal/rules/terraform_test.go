@@ -190,3 +190,317 @@ func TestTFIAMDenyIgnored(t *testing.T) {
 		t.Fatalf("Deny effect should not fire, got %d", len(findings))
 	}
 }
+
+// --- GCP Firewall ---
+
+func TestGCPFirewallIngressAll(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcp.tf",
+		GCPFirewalls: []collect.TFGCPFirewall{
+			{
+				ResourceName: "allow_all",
+				Line:         5,
+				Direction:    "INGRESS",
+				SourceRanges: []string{"0.0.0.0/0"},
+				AllPorts:     true,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_gcp_firewall_ingress_all" {
+		t.Errorf("expected tf_gcp_firewall_ingress_all, got %s", findings[0].ID)
+	}
+	if findings[0].Severity != SeverityCritical {
+		t.Errorf("expected CRITICAL, got %s", findings[0].Severity)
+	}
+}
+
+func TestGCPFirewallIngressSensitive(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcp.tf",
+		GCPFirewalls: []collect.TFGCPFirewall{
+			{
+				ResourceName: "ssh_open",
+				Line:         10,
+				Direction:    "INGRESS",
+				SourceRanges: []string{"0.0.0.0/0"},
+				Ports:        []string{"22"},
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_gcp_firewall_ingress_sensitive" {
+		t.Errorf("expected tf_gcp_firewall_ingress_sensitive, got %s", findings[0].ID)
+	}
+	if findings[0].Severity != SeverityHigh {
+		t.Errorf("expected HIGH, got %s", findings[0].Severity)
+	}
+}
+
+func TestGCPFirewallIngressWide(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcp.tf",
+		GCPFirewalls: []collect.TFGCPFirewall{
+			{
+				ResourceName: "web",
+				Line:         15,
+				Direction:    "INGRESS",
+				SourceRanges: []string{"0.0.0.0/0"},
+				Ports:        []string{"443"},
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_gcp_firewall_ingress_wide" {
+		t.Errorf("expected tf_gcp_firewall_ingress_wide, got %s", findings[0].ID)
+	}
+	if findings[0].Severity != SeverityMedium {
+		t.Errorf("expected MEDIUM, got %s", findings[0].Severity)
+	}
+}
+
+func TestGCPFirewallEgressIgnored(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcp.tf",
+		GCPFirewalls: []collect.TFGCPFirewall{
+			{
+				ResourceName: "egress",
+				Line:         5,
+				Direction:    "EGRESS",
+				SourceRanges: []string{"0.0.0.0/0"},
+				AllPorts:     true,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("egress should not trigger, got %d", len(findings))
+	}
+}
+
+func TestGCPFirewallPrivateRangeClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcp.tf",
+		GCPFirewalls: []collect.TFGCPFirewall{
+			{
+				ResourceName: "internal",
+				Line:         5,
+				Direction:    "INGRESS",
+				SourceRanges: []string{"10.0.0.0/8"},
+				AllPorts:     true,
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("private source range should not fire, got %d", len(findings))
+	}
+}
+
+// --- GCP Storage ---
+
+func TestGCPStoragePublicEntity(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcs.tf",
+		GCPStorageACLs: []collect.TFGCPStorageACL{
+			{ResourceName: "public_bucket", Line: 3, Entity: "allUsers"},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 || findings[0].ID != "tf_gcp_storage_public" {
+		t.Fatalf("expected tf_gcp_storage_public, got %v", findings)
+	}
+}
+
+func TestGCPStoragePublicIAMMember(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcs.tf",
+		GCPStorageACLs: []collect.TFGCPStorageACL{
+			{ResourceName: "iam_public", Line: 8, Member: "allUsers"},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 || findings[0].ID != "tf_gcp_storage_public" {
+		t.Fatalf("expected tf_gcp_storage_public, got %v", findings)
+	}
+}
+
+func TestGCPStoragePublicAuthenticatedUsers(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcs.tf",
+		GCPStorageACLs: []collect.TFGCPStorageACL{
+			{ResourceName: "auth_public", Line: 12, Entity: "allAuthenticatedUsers"},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 || findings[0].ID != "tf_gcp_storage_public" {
+		t.Fatalf("expected tf_gcp_storage_public, got %v", findings)
+	}
+}
+
+func TestGCPStoragePrivateClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "gcs.tf",
+		GCPStorageACLs: []collect.TFGCPStorageACL{
+			{ResourceName: "private_bucket", Line: 3, Entity: "user-admin@example.com"},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("private entity should not fire, got %d", len(findings))
+	}
+}
+
+// --- Azure NSG ---
+
+func TestAzureNSGIngressAll(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "azure.tf",
+		AzureNSGRules: []collect.TFAzureNSGRule{
+			{
+				ResourceName:         "allow_all",
+				Line:                 5,
+				Direction:            "Inbound",
+				Access:               "Allow",
+				SourceAddressPrefix:  "*",
+				DestinationPortRange: "*",
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_azure_nsg_ingress_all" {
+		t.Errorf("expected tf_azure_nsg_ingress_all, got %s", findings[0].ID)
+	}
+	if findings[0].Severity != SeverityCritical {
+		t.Errorf("expected CRITICAL, got %s", findings[0].Severity)
+	}
+}
+
+func TestAzureNSGIngressSensitive(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "azure.tf",
+		AzureNSGRules: []collect.TFAzureNSGRule{
+			{
+				ResourceName:         "ssh_open",
+				Line:                 10,
+				Direction:            "Inbound",
+				Access:               "Allow",
+				SourceAddressPrefix:  "0.0.0.0/0",
+				DestinationPortRange: "22",
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_azure_nsg_ingress_sensitive" {
+		t.Errorf("expected tf_azure_nsg_ingress_sensitive, got %s", findings[0].ID)
+	}
+}
+
+func TestAzureNSGIngressWide(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "azure.tf",
+		AzureNSGRules: []collect.TFAzureNSGRule{
+			{
+				ResourceName:         "https",
+				Line:                 15,
+				Direction:            "Inbound",
+				Access:               "Allow",
+				SourceAddressPrefix:  "Internet",
+				DestinationPortRange: "443",
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d", len(findings))
+	}
+	if findings[0].ID != "tf_azure_nsg_ingress_wide" {
+		t.Errorf("expected tf_azure_nsg_ingress_wide, got %s", findings[0].ID)
+	}
+	if findings[0].Severity != SeverityMedium {
+		t.Errorf("expected MEDIUM, got %s", findings[0].Severity)
+	}
+}
+
+func TestAzureNSGOutboundIgnored(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "azure.tf",
+		AzureNSGRules: []collect.TFAzureNSGRule{
+			{
+				ResourceName:         "outbound",
+				Line:                 5,
+				Direction:            "Outbound",
+				Access:               "Allow",
+				SourceAddressPrefix:  "*",
+				DestinationPortRange: "*",
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("outbound should not trigger, got %d", len(findings))
+	}
+}
+
+func TestAzureNSGDenyIgnored(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "azure.tf",
+		AzureNSGRules: []collect.TFAzureNSGRule{
+			{
+				ResourceName:         "deny_all",
+				Line:                 5,
+				Direction:            "Inbound",
+				Access:               "Deny",
+				SourceAddressPrefix:  "*",
+				DestinationPortRange: "*",
+			},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("deny access should not trigger, got %d", len(findings))
+	}
+}
+
+// --- Azure Storage ---
+
+func TestAzureStoragePublic(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "azure_storage.tf",
+		AzureStorageAccounts: []collect.TFAzureStorageAccount{
+			{ResourceName: "public_sa", Line: 3, AllowBlobPublicAccess: true},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 1 || findings[0].ID != "tf_azure_storage_public" {
+		t.Fatalf("expected tf_azure_storage_public, got %v", findings)
+	}
+}
+
+func TestAzureStoragePrivateClean(t *testing.T) {
+	tf := collect.TerraformFile{
+		Path: "azure_storage.tf",
+		AzureStorageAccounts: []collect.TFAzureStorageAccount{
+			{ResourceName: "private_sa", Line: 3, AllowBlobPublicAccess: false},
+		},
+	}
+	findings := terraformFindings([]collect.TerraformFile{tf})
+	if len(findings) != 0 {
+		t.Fatalf("private storage should not fire, got %d", len(findings))
+	}
+}

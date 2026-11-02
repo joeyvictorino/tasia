@@ -46,4 +46,4 @@
 - ~~Hardcoded secret value detection~~ (done: `env_hardcoded_secret`)
 - ~~Kubernetes NetworkPolicy absence detection~~ (done: `kube_no_network_policy`)
 - ~~`tasia diff` command for comparing two scans~~ (done: `--base`, `--current`, `--format text|json`, `--fail-on` for CI gating on regressions)
-- GCP and Azure Terraform rules
+- ~~GCP and Azure Terraform rules~~ (done: `tf_gcp_firewall_ingress_all`, `tf_gcp_firewall_ingress_sensitive`, `tf_gcp_firewall_ingress_wide`, `tf_gcp_storage_public`, `tf_azure_nsg_ingress_all`, `tf_azure_nsg_ingress_sensitive`, `tf_azure_nsg_ingress_wide`, `tf_azure_storage_public`)
