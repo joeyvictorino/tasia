@@ -34,5 +34,7 @@
 
 ## v1.0
 
-- ~~Stable rule IDs, findings JSON schema~~ (done: `schema_version` field in JSON output, `tasia schema` command, `docs/findings-schema.json`)
-- Documented public API, versioned rule catalog.
+- ~~Stable rule IDs~~ (done: `RuleInfo.ID` in `internal/rules/catalog.go`, same IDs across `.tasiaignore`, `.tasiarc.yaml`, `--format json`)
+- ~~Findings JSON schema~~ (done: `tasia schema` command, `docs/findings-schema.json`, `schema_version` field in `--format json` output)
+- ~~Versioned rule catalog~~ (done: `tasia rules --format json` prints every rule with stable fields)
+- Documented public Go API
