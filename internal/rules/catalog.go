@@ -9,6 +9,15 @@ type RuleInfo struct {
 	Category    string   `json:"category"`
 }
 
+// CatalogMap returns a map from rule ID to RuleInfo for fast lookup.
+func CatalogMap() map[string]RuleInfo {
+	m := make(map[string]RuleInfo)
+	for _, r := range Catalog() {
+		m[r.ID] = r
+	}
+	return m
+}
+
 // Catalog returns every rule tasia can fire, in a stable order grouped by
 // category. This is the single source of truth for `tasia rules` and the
 // v1.0 findings JSON schema.

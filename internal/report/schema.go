@@ -1,6 +1,6 @@
 package report
 
-const SchemaVersion = "1.0.0"
+const SchemaVersion = "1.1.0"
 
 const FindingsJSONSchema = `{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -15,7 +15,7 @@ const FindingsJSONSchema = `{
       "type": "string",
       "description": "Semantic version of this schema (MAJOR.MINOR.PATCH). A MAJOR bump means a breaking change to the shape; MINOR adds fields; PATCH changes descriptions only.",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
-      "examples": ["1.0.0"]
+      "examples": ["1.1.0"]
     },
     "decision": {
       "type": "string",
@@ -26,6 +26,10 @@ const FindingsJSONSchema = `{
       "type": "string",
       "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"],
       "description": "The highest severity among all findings, or UNKNOWN on parse error."
+    },
+    "summary": {
+      "$ref": "#/$defs/scan_summary",
+      "description": "Aggregate statistics about the scan run. Present on normal runs, absent on ERROR."
     },
     "findings": {
       "type": "array",
@@ -39,6 +43,38 @@ const FindingsJSONSchema = `{
     }
   },
   "$defs": {
+    "scan_summary": {
+      "type": "object",
+      "required": ["total_findings", "by_severity", "by_category", "files_scanned", "duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "total_findings": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of findings in this report."
+        },
+        "by_severity": {
+          "type": "object",
+          "description": "Finding counts keyed by severity level (CRITICAL, HIGH, MEDIUM, LOW). Missing keys have count 0.",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "by_category": {
+          "type": "object",
+          "description": "Finding counts keyed by rule category (compose, agent, dockerfile, kubernetes, terraform, etc.).",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of configuration files collected and inspected."
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Wall-clock scan duration in milliseconds."
+        }
+      }
+    },
     "finding": {
       "type": "object",
       "required": ["id", "severity", "title", "file", "line", "evidence", "why", "fix"],

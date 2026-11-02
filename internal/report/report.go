@@ -116,15 +116,55 @@ func ErrorJSON(errs []collect.ConfigError) string {
 	return string(b)
 }
 
+// ScanSummary holds aggregate statistics about a scan run. It is included in
+// the JSON output for dashboards and trend tracking.
+type ScanSummary struct {
+	TotalFindings  int            `json:"total_findings"`
+	BySeverity     map[string]int `json:"by_severity"`
+	ByCategory     map[string]int `json:"by_category"`
+	FilesScanned   int            `json:"files_scanned"`
+	DurationMs     int64          `json:"duration_ms"`
+}
+
+// BuildSummary computes aggregate statistics from findings and scan metadata.
+func BuildSummary(findings []rules.Finding, filesScanned int, durationMs int64) ScanSummary {
+	bySev := map[string]int{
+		"CRITICAL": 0,
+		"HIGH":     0,
+		"MEDIUM":   0,
+		"LOW":      0,
+	}
+	byCat := map[string]int{}
+
+	catalog := rules.CatalogMap()
+	for _, f := range findings {
+		bySev[string(f.Severity)]++
+		cat := "other"
+		if info, ok := catalog[f.ID]; ok {
+			cat = info.Category
+		}
+		byCat[cat]++
+	}
+
+	return ScanSummary{
+		TotalFindings: len(findings),
+		BySeverity:    bySev,
+		ByCategory:    byCat,
+		FilesScanned:  filesScanned,
+		DurationMs:    durationMs,
+	}
+}
+
 // FindingsToJSON for --format json
-func FindingsToJSON(findings []rules.Finding, decision, risk string) (string, error) {
+func FindingsToJSON(findings []rules.Finding, decision, risk string, summary *ScanSummary) (string, error) {
 	type out struct {
 		SchemaVersion string          `json:"schema_version"`
 		Decision      string          `json:"decision"`
 		Risk          string          `json:"risk"`
+		Summary       *ScanSummary    `json:"summary,omitempty"`
 		Findings      []rules.Finding `json:"findings"`
 	}
-	o := out{SchemaVersion: SchemaVersion, Decision: decision, Risk: risk, Findings: findings}
+	o := out{SchemaVersion: SchemaVersion, Decision: decision, Risk: risk, Summary: summary, Findings: findings}
 	b, err := json.MarshalIndent(o, "", "  ")
 	return string(b), err
 }

@@ -28,11 +28,10 @@ func TestFindingsJSONSchemaIsValidJSON(t *testing.T) {
 	if !ok {
 		t.Fatal("schema should have $defs")
 	}
-	if defs["finding"] == nil {
-		t.Error("schema should define 'finding'")
-	}
-	if defs["parse_error"] == nil {
-		t.Error("schema should define 'parse_error'")
+	for _, def := range []string{"finding", "parse_error", "scan_summary"} {
+		if defs[def] == nil {
+			t.Errorf("schema should define %q", def)
+		}
 	}
 }
 

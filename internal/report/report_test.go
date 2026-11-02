@@ -309,6 +309,174 @@ func TestAllCatalogRulesProduceValidSARIFLevel(t *testing.T) {
 	t.Logf("verified %d catalog rules produce valid SARIF levels", len(catalog))
 }
 
+func TestBuildSummary(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "exposed_inference", Severity: rules.SeverityHigh, Title: "a", File: "f.yml"},
+		{ID: "exposed_vector", Severity: rules.SeverityHigh, Title: "b", File: "f.yml"},
+		{ID: "latest_image", Severity: rules.SeverityMedium, Title: "c", File: "f.yml"},
+		{ID: "vector_db_no_auth", Severity: rules.SeverityLow, Title: "d", File: "f.yml"},
+	}
+	s := BuildSummary(findings, 5, 123)
+	if s.TotalFindings != 4 {
+		t.Errorf("TotalFindings = %d, want 4", s.TotalFindings)
+	}
+	if s.BySeverity["HIGH"] != 2 {
+		t.Errorf("BySeverity[HIGH] = %d, want 2", s.BySeverity["HIGH"])
+	}
+	if s.BySeverity["MEDIUM"] != 1 {
+		t.Errorf("BySeverity[MEDIUM] = %d, want 1", s.BySeverity["MEDIUM"])
+	}
+	if s.BySeverity["LOW"] != 1 {
+		t.Errorf("BySeverity[LOW] = %d, want 1", s.BySeverity["LOW"])
+	}
+	if s.BySeverity["CRITICAL"] != 0 {
+		t.Errorf("BySeverity[CRITICAL] = %d, want 0", s.BySeverity["CRITICAL"])
+	}
+	if s.ByCategory["compose"] != 4 {
+		t.Errorf("ByCategory[compose] = %d, want 4", s.ByCategory["compose"])
+	}
+	if s.FilesScanned != 5 {
+		t.Errorf("FilesScanned = %d, want 5", s.FilesScanned)
+	}
+	if s.DurationMs != 123 {
+		t.Errorf("DurationMs = %d, want 123", s.DurationMs)
+	}
+}
+
+func TestBuildSummaryEmpty(t *testing.T) {
+	s := BuildSummary(nil, 0, 0)
+	if s.TotalFindings != 0 {
+		t.Errorf("TotalFindings = %d, want 0", s.TotalFindings)
+	}
+	for _, sev := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW"} {
+		if s.BySeverity[sev] != 0 {
+			t.Errorf("BySeverity[%s] = %d, want 0", sev, s.BySeverity[sev])
+		}
+	}
+}
+
+func TestFindingsToJSONIncludesSummary(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "exposed_inference", Severity: rules.SeverityHigh, Title: "a", File: "f.yml", Line: 1, Evidence: "e", Why: "w", Fix: "f"},
+	}
+	summary := BuildSummary(findings, 3, 42)
+	out, err := FindingsToJSON(findings, "BLOCKED", "HIGH", &summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"summary"`) {
+		t.Error("JSON output should contain summary")
+	}
+	if !strings.Contains(out, `"total_findings": 1`) {
+		t.Error("summary should contain total_findings")
+	}
+	if !strings.Contains(out, `"files_scanned": 3`) {
+		t.Error("summary should contain files_scanned")
+	}
+	if !strings.Contains(out, `"duration_ms": 42`) {
+		t.Error("summary should contain duration_ms")
+	}
+	if !strings.Contains(out, `"by_severity"`) {
+		t.Error("summary should contain by_severity")
+	}
+	if !strings.Contains(out, `"by_category"`) {
+		t.Error("summary should contain by_category")
+	}
+}
+
+func TestFindingsToJSONOmitsSummaryWhenNil(t *testing.T) {
+	out, err := FindingsToJSON(nil, "PASS", "LOW", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, `"summary"`) {
+		t.Error("JSON output should omit summary when nil")
+	}
+}
+
+func TestBuildSummary(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "exposed_inference", Severity: rules.SeverityHigh, Title: "t", File: "a.yml", Line: 1, Evidence: "e", Why: "w", Fix: "f"},
+		{ID: "exposed_vector", Severity: rules.SeverityHigh, Title: "t", File: "a.yml", Line: 2, Evidence: "e", Why: "w", Fix: "f"},
+		{ID: "privileged_container", Severity: rules.SeverityCritical, Title: "t", File: "a.yml", Line: 3, Evidence: "e", Why: "w", Fix: "f"},
+		{ID: "latest_image", Severity: rules.SeverityMedium, Title: "t", File: "a.yml", Line: 4, Evidence: "e", Why: "w", Fix: "f"},
+		{ID: "kube_privileged", Severity: rules.SeverityCritical, Title: "t", File: "k.yaml", Line: 1, Evidence: "e", Why: "w", Fix: "f"},
+	}
+	s := BuildSummary(findings, 7, 42)
+	if s.TotalFindings != 5 {
+		t.Errorf("total = %d, want 5", s.TotalFindings)
+	}
+	if s.BySeverity["CRITICAL"] != 2 {
+		t.Errorf("CRITICAL = %d, want 2", s.BySeverity["CRITICAL"])
+	}
+	if s.BySeverity["HIGH"] != 2 {
+		t.Errorf("HIGH = %d, want 2", s.BySeverity["HIGH"])
+	}
+	if s.BySeverity["MEDIUM"] != 1 {
+		t.Errorf("MEDIUM = %d, want 1", s.BySeverity["MEDIUM"])
+	}
+	if s.BySeverity["LOW"] != 0 {
+		t.Errorf("LOW = %d, want 0", s.BySeverity["LOW"])
+	}
+	if s.ByCategory["compose"] != 3 {
+		t.Errorf("compose = %d, want 3", s.ByCategory["compose"])
+	}
+	if s.ByCategory["kubernetes"] != 1 {
+		t.Errorf("kubernetes = %d, want 1", s.ByCategory["kubernetes"])
+	}
+	if s.FilesScanned != 7 {
+		t.Errorf("files = %d, want 7", s.FilesScanned)
+	}
+	if s.DurationMs != 42 {
+		t.Errorf("duration = %d, want 42", s.DurationMs)
+	}
+}
+
+func TestFindingsToJSONIncludesSummary(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "exposed_inference", Severity: rules.SeverityHigh, Title: "t", File: "a.yml", Line: 1, Evidence: "e", Why: "w", Fix: "f"},
+	}
+	s := BuildSummary(findings, 3, 15)
+	out, err := FindingsToJSON(findings, "BLOCKED", "HIGH", &s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	summary, ok := parsed["summary"].(map[string]interface{})
+	if !ok {
+		t.Fatal("JSON output should include summary object")
+	}
+	if int(summary["total_findings"].(float64)) != 1 {
+		t.Errorf("summary.total_findings = %v, want 1", summary["total_findings"])
+	}
+	if int(summary["files_scanned"].(float64)) != 3 {
+		t.Errorf("summary.files_scanned = %v, want 3", summary["files_scanned"])
+	}
+	if int(summary["duration_ms"].(float64)) != 15 {
+		t.Errorf("summary.duration_ms = %v, want 15", summary["duration_ms"])
+	}
+	bySev, ok := summary["by_severity"].(map[string]interface{})
+	if !ok {
+		t.Fatal("summary should have by_severity")
+	}
+	if int(bySev["HIGH"].(float64)) != 1 {
+		t.Errorf("by_severity.HIGH = %v, want 1", bySev["HIGH"])
+	}
+}
+
+func TestFindingsToJSONOmitsSummaryWhenNil(t *testing.T) {
+	out, err := FindingsToJSON(nil, "PASS", "LOW", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "summary") {
+		t.Error("summary should be omitted when nil")
+	}
+}
+
 func TestErrorJSONIsValidFailClosed(t *testing.T) {
 	out := ErrorJSON([]collect.ConfigError{{Path: "docker-compose.yml", Err: "yaml: line 2: bad"}})
 	var parsed struct {

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/joeyvictorino/tasia/internal/collect"
 	"github.com/joeyvictorino/tasia/internal/config"
@@ -127,6 +128,8 @@ func runReview(args []string) error {
 		return err
 	}
 
+	t0 := time.Now()
+
 	// Collect
 	collected, err := collect.WalkAndCollect(absPath)
 	if err != nil {
@@ -164,6 +167,9 @@ func runReview(args []string) error {
 	// Decide
 	decision, risk := report.Decide(findings, *failOn, *strict)
 
+	durationMs := time.Since(t0).Milliseconds()
+	summary := report.BuildSummary(findings, collected.FilesScanned(), durationMs)
+
 	// Write unless no-write (do this first so side-effects don't affect format)
 	wrotePath := ""
 	if !*noWrite {
@@ -180,7 +186,7 @@ func runReview(args []string) error {
 	// Terminal (json/sarif must be pure on stdout)
 	switch *format {
 	case "json":
-		out, _ := report.FindingsToJSON(findings, decision, risk)
+		out, _ := report.FindingsToJSON(findings, decision, risk, &summary)
 		fmt.Println(out)
 		if wrotePath != "" {
 			fmt.Fprintf(os.Stderr, "Wrote .tasia/ hardening pack to %s\n", wrotePath)

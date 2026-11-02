@@ -42,6 +42,15 @@ type Collected struct {
 	ParseErrors           []ConfigError
 }
 
+// FilesScanned returns the total number of configuration files that were
+// collected and inspected during the scan.
+func (c *Collected) FilesScanned() int {
+	n := len(c.ComposeFiles) + len(c.EnvFiles) + len(c.Dockerfiles) +
+		len(c.ReverseProxyConfigs) + len(c.KubeManifests) + len(c.HelmValues) +
+		len(c.TerraformFiles) + len(c.OtherConfigs)
+	return n
+}
+
 // ConfigError records a config file that was found but could not be parsed.
 // The gate must fail closed when any are present: an unparseable config cannot
 // be vouched for, so reporting PASS on it would defeat the tool's purpose.
