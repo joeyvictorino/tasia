@@ -51,6 +51,8 @@ func Run(args []string) error {
 	switch cmd {
 	case "review":
 		return runReview(args[1:])
+	case "diff":
+		return runDiff(args[1:])
 	case "ci":
 		return runCI(args[1:])
 	case "install":
@@ -92,6 +94,7 @@ func printUsage() {
 	fmt.Println(`Tasia — private AI stack hardening gate
 
 Usage:
+  tasia diff --base DIR --current DIR [--format text|json] [--fail-on critical|high|medium|low]
   tasia review [--path .] [--format text|json|sarif] [--fail-on critical|high|medium|low] [--no-write] [--strict]
   tasia ci [--path .] [--fail-on critical|high|medium|low]
   tasia install --pre-push
@@ -478,6 +481,79 @@ func runRules(args []string) error {
 		fmt.Printf("\n%d rules total\n", len(catalog))
 	}
 	return nil
+}
+
+func runDiff(args []string) error {
+	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
+	basePath := fs.String("base", "", "path to baseline scan directory (required)")
+	curPath := fs.String("current", "", "path to current scan directory (required)")
+	format := fs.String("format", "text", "output format: text or json")
+	failOn := fs.String("fail-on", "", "exit 1 if any new finding at or above this severity")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *basePath == "" || *curPath == "" {
+		fmt.Fprintln(os.Stderr, "tasia diff: --base and --current are required")
+		fs.Usage()
+		return fmt.Errorf("missing required flags")
+	}
+	if err := validateFailOn(*failOn); err != nil {
+		return err
+	}
+
+	baseFindings := scanDir(*basePath)
+	curFindings := scanDir(*curPath)
+
+	baseDec, _ := report.Decide(baseFindings, "high", false)
+	curDec, _ := report.Decide(curFindings, "high", false)
+
+	diff := report.DiffFindings(baseFindings, curFindings)
+	diff.BaseDecision = baseDec
+	diff.CurrentDecision = curDec
+
+	switch *format {
+	case "json":
+		out, err := report.DiffToJSON(diff)
+		if err != nil {
+			return err
+		}
+		fmt.Println(out)
+	default:
+		fmt.Print(report.DiffToText(diff))
+	}
+
+	if *failOn != "" {
+		threshold := rules.Severity(strings.ToUpper(*failOn))
+		for _, f := range diff.New {
+			if f.Severity.Rank() >= threshold.Rank() {
+				fmt.Fprintf(os.Stderr, "tasia diff: new finding at or above %s\n", threshold)
+				os.Exit(1)
+			}
+		}
+	}
+	return nil
+}
+
+func scanDir(path string) []rules.Finding {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil
+	}
+	collected, err := collect.WalkAndCollect(absPath)
+	if err != nil {
+		return nil
+	}
+	if len(collected.ParseErrors) > 0 {
+		return nil
+	}
+	findings := rules.Evaluate(collected)
+	if pol, err := ignore.Load(absPath); err == nil {
+		findings = filterFindings(findings, pol)
+	}
+	if cfg, err := config.Load(absPath); err == nil {
+		findings = applySeverityOverrides(findings, cfg)
+	}
+	return findings
 }
 
 func runSchema(_ []string) error {
