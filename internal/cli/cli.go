@@ -184,6 +184,10 @@ func Run(args []string) error {
 		return runDns(args[1:])
 	case "labels":
 		return runLabels(args[1:])
+	case "cgroups":
+		return runCgroups(args[1:])
+	case "signals":
+		return runSignals(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
