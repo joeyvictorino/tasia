@@ -243,6 +243,20 @@ func ParseDockerfile(path, content string) Dockerfile {
 	return df
 }
 
+// isComposeFile matches Docker Compose file names including overrides and
+// variant files (docker-compose.override.yml, docker-compose.prod.yaml, etc.).
+func isComposeFile(lower string) bool {
+	switch lower {
+	case "docker-compose.yml", "docker-compose.yaml",
+		"compose.yml", "compose.yaml":
+		return true
+	}
+	if strings.HasPrefix(lower, "docker-compose.") || strings.HasPrefix(lower, "compose.") {
+		return strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")
+	}
+	return false
+}
+
 // WalkAndCollect walks the dir and extracts relevant data.
 func WalkAndCollect(root string) (*Collected, error) {
 	c := &Collected{Root: root}
@@ -264,8 +278,7 @@ func WalkAndCollect(root string) (*Collected, error) {
 		lower := strings.ToLower(d.Name())
 
 		switch {
-		case lower == "docker-compose.yml" || lower == "docker-compose.yaml" ||
-			lower == "compose.yml" || lower == "compose.yaml":
+		case isComposeFile(lower):
 			f, perr := compose.Parse(path)
 			if perr != nil {
 				// Fail closed: an unparseable compose file is recorded so the
