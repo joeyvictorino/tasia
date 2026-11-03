@@ -602,6 +602,10 @@ func Run(args []string) error {
 		return runClickhouseaudit(args[1:])
 	case "cockroachdbaudit":
 		return runCockroachdbaudit(args[1:])
+	case "rethinkdbaudit":
+		return runRethinkdbaudit(args[1:])
+	case "scylladbaudit":
+		return runScylladbaudit(args[1:])
 	case "vpnaudit":
 		return runVpnaudit(args[1:])
 	case "env-template", "envtemplate":
