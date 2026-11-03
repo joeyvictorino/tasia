@@ -554,6 +554,10 @@ func Run(args []string) error {
 		return runKafkaaudit(args[1:])
 	case "elasticaudit":
 		return runElasticaudit(args[1:])
+	case "redisaudit":
+		return runRedisaudit(args[1:])
+	case "mongoaudit":
+		return runMongoaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
