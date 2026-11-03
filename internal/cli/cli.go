@@ -412,6 +412,10 @@ func Run(args []string) error {
 		return runNetworkisolation(args[1:])
 	case "apiexpose":
 		return runApiexpose(args[1:])
+	case "oauth2audit":
+		return runOauth2audit(args[1:])
+	case "apigateway":
+		return runApigateway(args[1:])
 	case "envinjection":
 		return runEnvinjection(args[1:])
 	case "ptraceprotect":
