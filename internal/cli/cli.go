@@ -414,6 +414,10 @@ func Run(args []string) error {
 		return runApiexpose(args[1:])
 	case "envinjection":
 		return runEnvinjection(args[1:])
+	case "ptraceprotect":
+		return runPtraceprotect(args[1:])
+	case "tmpwatch":
+		return runTmpwatch(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
