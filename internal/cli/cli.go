@@ -542,6 +542,12 @@ func Run(args []string) error {
 		return runLdapaudit(args[1:])
 	case "smtpaudit":
 		return runSmtpaudit(args[1:])
+	case "hcprobe":
+		return runHcprobe(args[1:])
+	case "xmlinjection":
+		return runXmlinjection(args[1:])
+	case "deserializationaudit":
+		return runDeserializationaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
