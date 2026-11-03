@@ -588,6 +588,10 @@ func Run(args []string) error {
 		return runConsulaudit(args[1:])
 	case "zookeeperaudit":
 		return runZookeeperaudit(args[1:])
+	case "cephaudit":
+		return runCephaudit(args[1:])
+	case "cassandraaudit":
+		return runCassandraaudit(args[1:])
 	case "vpnaudit":
 		return runVpnaudit(args[1:])
 	case "completions", "completion":
