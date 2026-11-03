@@ -444,6 +444,10 @@ func Run(args []string) error {
 		return runStdinopen(args[1:])
 	case "coredump":
 		return runCoredump(args[1:])
+	case "debugflag":
+		return runDebugflag(args[1:])
+	case "timesync":
+		return runTimesync(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
