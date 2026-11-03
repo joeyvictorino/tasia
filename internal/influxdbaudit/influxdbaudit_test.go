@@ -16,10 +16,6 @@ func allIf(target int) compose.PortMapping {
 	return compose.PortMapping{HostPort: target, TargetPort: target, HostIP: "0.0.0.0"}
 }
 
-func localIf(target int) compose.PortMapping {
-	return compose.PortMapping{HostPort: target, TargetPort: target, HostIP: "127.0.0.1"}
-}
-
 func col(svcs ...compose.Service) *collect.Collected {
 	return &collect.Collected{Root: ".", ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}}}
 }
@@ -28,20 +24,19 @@ func colPath(path string, svcs ...compose.Service) *collect.Collected {
 	return &collect.Collected{Root: path, ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}}}
 }
 
-func TestIsInfluxImage(t *testing.T) {
+func TestIsInfluxDBImage(t *testing.T) {
 	tests := []struct {
 		image string
 		want  bool
 	}{
 		{"influxdb:2.7", true},
 		{"bitnami/influxdb:latest", true},
-		{"quay.io/influxdb:1.8", true},
-		{"redis:7", false},
-		{"nginx", false},
+		{"nginx:latest", false},
+		{"INFLUXDB:latest", true},
 	}
 	for _, tt := range tests {
-		if got := isInfluxImage(tt.image); got != tt.want {
-			t.Errorf("isInfluxImage(%q) = %v, want %v", tt.image, got, tt.want)
+		if got := isInfluxDBImage(tt.image); got != tt.want {
+			t.Errorf("isInfluxDBImage(%q) = %v, want %v", tt.image, got, tt.want)
 		}
 	}
 }
@@ -53,17 +48,24 @@ func TestNoAuth(t *testing.T) {
 	}
 }
 
-func TestAuthConfigured(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_HTTP_AUTH_ENABLED=true"}, nil)))
-	if r.Summary.NoAuth != 0 {
-		t.Error("should not flag when auth enabled")
-	}
-}
-
 func TestAuthDisabled(t *testing.T) {
 	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_HTTP_AUTH_ENABLED=false"}, nil)))
 	if r.Summary.NoAuth == 0 {
-		t.Error("expected no_auth when auth explicitly disabled")
+		t.Error("expected influxdb_no_auth finding when auth explicitly disabled")
+	}
+}
+
+func TestAuthEnabled(t *testing.T) {
+	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_HTTP_AUTH_ENABLED=true"}, nil)))
+	if r.Summary.NoAuth != 0 {
+		t.Error("expected no influxdb_no_auth finding when auth enabled")
+	}
+}
+
+func TestAuthViaPassword(t *testing.T) {
+	r := Analyze(col(svc("db", "influxdb:2", []string{"DOCKER_INFLUXDB_INIT_PASSWORD=securepass123"}, nil)))
+	if r.Summary.NoAuth != 0 {
+		t.Error("expected no influxdb_no_auth finding when password set")
 	}
 }
 
@@ -74,90 +76,70 @@ func TestNoTLS(t *testing.T) {
 	}
 }
 
-func TestTLSConfigured(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_HTTP_HTTPS_ENABLED=TRUE"}, nil)))
+func TestTLSEnabled(t *testing.T) {
+	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_HTTP_HTTPS_ENABLED=true"}, nil)))
 	if r.Summary.NoTLS != 0 {
-		t.Error("should not flag when TLS enabled")
+		t.Error("expected no influxdb_no_tls finding when TLS enabled")
 	}
 }
 
-func TestExposedPort(t *testing.T) {
+func TestExposedAPIPort(t *testing.T) {
 	r := Analyze(col(svc("db", "influxdb:2", nil, []compose.PortMapping{allIf(8086)})))
 	if r.Summary.ExposedPort == 0 {
-		t.Error("expected exposed_port for HTTP API")
+		t.Error("expected influxdb_exposed_port finding for 8086")
 	}
 }
 
-func TestLocalhostPort(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", nil, []compose.PortMapping{localIf(8086)})))
-	if r.Summary.ExposedPort != 0 {
-		t.Error("localhost port should not be flagged")
-	}
-}
-
-func TestRPCPort(t *testing.T) {
+func TestExposedRPCPort(t *testing.T) {
 	r := Analyze(col(svc("db", "influxdb:2", nil, []compose.PortMapping{allIf(8088)})))
 	if r.Summary.ExposedPort == 0 {
-		t.Error("expected exposed_port for RPC port")
+		t.Error("expected influxdb_exposed_port finding for 8088")
+	}
+}
+
+func TestBothPortsExposed(t *testing.T) {
+	r := Analyze(col(svc("db", "influxdb:2", nil, []compose.PortMapping{allIf(8086), allIf(8088)})))
+	if r.Summary.ExposedPort != 2 {
+		t.Errorf("expected 2 port findings, got %d", r.Summary.ExposedPort)
 	}
 }
 
 func TestDefaultPassword(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_ADMIN_PASSWORD=admin"}, nil)))
+	r := Analyze(col(svc("db", "influxdb:2", []string{"DOCKER_INFLUXDB_INIT_PASSWORD=admin"}, nil)))
 	if r.Summary.DefaultPassword == 0 {
-		t.Error("expected default_password finding")
+		t.Error("expected influxdb_default_password finding")
 	}
 }
 
 func TestStrongPassword(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_ADMIN_PASSWORD=x9Kp!mQ2vL"}, nil)))
+	r := Analyze(col(svc("db", "influxdb:2", []string{"DOCKER_INFLUXDB_INIT_PASSWORD=s3cur3P@ss!"}, nil)))
 	if r.Summary.DefaultPassword != 0 {
-		t.Error("strong password should not be flagged")
+		t.Error("expected no influxdb_default_password finding with strong password")
 	}
 }
 
-func TestWeakToken(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", []string{"DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=admin"}, nil)))
-	if r.Summary.TokenExposed == 0 {
-		t.Error("expected token_exposed finding")
+func TestAdminExposed(t *testing.T) {
+	r := Analyze(col(svc("db", "influxdb:2",
+		[]string{"INFLUXDB_HTTP_BIND_ADDRESS=0.0.0.0:8086"},
+		[]compose.PortMapping{allIf(8086)})))
+	if r.Summary.AdminExposed == 0 {
+		t.Error("expected influxdb_admin_exposed finding")
 	}
 }
 
-func TestStrongToken(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", []string{"DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=aB3cD9xYz2mKpQ7"}, nil)))
-	if r.Summary.TokenExposed != 0 {
-		t.Error("strong token should not be flagged")
+func TestAdminNotExposedWithAuth(t *testing.T) {
+	r := Analyze(col(svc("db", "influxdb:2",
+		[]string{"INFLUXDB_HTTP_AUTH_ENABLED=true", "INFLUXDB_HTTP_BIND_ADDRESS=0.0.0.0:8086"},
+		[]compose.PortMapping{allIf(8086)})))
+	if r.Summary.AdminExposed != 0 {
+		t.Error("expected no admin_exposed finding when auth enabled")
 	}
 }
 
-func TestDebugEnabled(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", []string{"INFLUXDB_LOGGING_LEVEL=debug"}, nil)))
-	if r.Summary.DebugEnabled == 0 {
-		t.Error("expected debug_enabled finding")
-	}
-}
-
-func TestNonInfluxSkipped(t *testing.T) {
-	r := Analyze(col(svc("redis", "redis:7", nil, nil)))
+func TestNonInfluxDBSkipped(t *testing.T) {
+	r := Analyze(col(svc("web", "nginx:latest", nil, nil)))
 	if len(r.Services) != 0 {
-		t.Error("non-influx service should be ignored")
-	}
-}
-
-func TestMultipleServices(t *testing.T) {
-	r := Analyze(col(
-		svc("db1", "influxdb:2", nil, nil),
-		svc("db2", "bitnami/influxdb", nil, nil),
-	))
-	if len(r.Services) != 2 {
-		t.Errorf("expected 2 services, got %d", len(r.Services))
-	}
-}
-
-func TestMultiplePorts(t *testing.T) {
-	r := Analyze(col(svc("db", "influxdb:2", nil, []compose.PortMapping{allIf(8086), allIf(8088)})))
-	if r.Summary.ExposedPort != 2 {
-		t.Errorf("expected 2 port findings, got %d", r.Summary.ExposedPort)
+		t.Errorf("expected 0 services, got %d", len(r.Services))
 	}
 }
 
@@ -166,9 +148,6 @@ func TestFormatText(t *testing.T) {
 	text := FormatText(r)
 	if !strings.Contains(text, "InfluxDB Security Audit") {
 		t.Error("missing title")
-	}
-	if !strings.Contains(text, "/test") {
-		t.Error("missing path")
 	}
 }
 
@@ -180,9 +159,26 @@ func TestFormatTextEmpty(t *testing.T) {
 	}
 }
 
+func TestEmptyCollection(t *testing.T) {
+	r := Analyze(&collect.Collected{Root: "."})
+	if len(r.Services) != 0 {
+		t.Error("expected empty report")
+	}
+}
+
 func TestReportPath(t *testing.T) {
 	r := Analyze(colPath("/mydir"))
 	if r.Path != "/mydir" {
 		t.Errorf("expected /mydir, got %s", r.Path)
+	}
+}
+
+func TestMultipleServices(t *testing.T) {
+	r := Analyze(col(
+		svc("db1", "influxdb:2", nil, nil),
+		svc("db2", "bitnami/influxdb", nil, nil),
+	))
+	if len(r.Services) != 2 {
+		t.Errorf("expected 2 services, got %d", len(r.Services))
 	}
 }

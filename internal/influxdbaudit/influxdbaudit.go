@@ -24,8 +24,7 @@ type Summary struct {
 	NoTLS           int `json:"no_tls"`
 	ExposedPort     int `json:"exposed_port"`
 	DefaultPassword int `json:"default_password"`
-	TokenExposed    int `json:"token_exposed"`
-	DebugEnabled    int `json:"debug_enabled"`
+	AdminExposed    int `json:"admin_exposed"`
 }
 
 type Report struct {
@@ -34,13 +33,13 @@ type Report struct {
 	Summary  Summary         `json:"summary"`
 }
 
-var influxImages = []string{
-	"influxdb", "bitnami/influxdb", "quay.io/influxdb",
+var influxdbImages = []string{
+	"influxdb", "bitnami/influxdb",
 }
 
-func isInfluxImage(image string) bool {
+func isInfluxDBImage(image string) bool {
 	img := strings.ToLower(image)
-	for _, ci := range influxImages {
+	for _, ci := range influxdbImages {
 		if strings.Contains(img, ci) {
 			return true
 		}
@@ -51,14 +50,17 @@ func isInfluxImage(image string) bool {
 func hasAuth(envs []string) bool {
 	for _, e := range envs {
 		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "INFLUXDB_HTTP_AUTH_ENABLED=TRUE") ||
-			strings.Contains(upper, "DOCKER_INFLUXDB_INIT_USERNAME") ||
-			strings.Contains(upper, "INFLUXDB_ADMIN_USER") ||
-			strings.Contains(upper, "INFLUXDB_USER") {
-			return true
-		}
 		if strings.Contains(upper, "INFLUXDB_HTTP_AUTH_ENABLED=FALSE") {
 			return false
+		}
+		if strings.Contains(upper, "INFLUXDB_HTTP_AUTH_ENABLED=TRUE") {
+			return true
+		}
+		if strings.Contains(upper, "DOCKER_INFLUXDB_INIT_PASSWORD") ||
+			strings.Contains(upper, "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN") ||
+			strings.Contains(upper, "INFLUXDB_ADMIN_PASSWORD") ||
+			strings.Contains(upper, "INFLUXDB_HTTP_AUTH_PASSWORD") {
+			return true
 		}
 	}
 	return false
@@ -68,8 +70,8 @@ func hasTLS(envs []string) bool {
 	for _, e := range envs {
 		upper := strings.ToUpper(e)
 		if strings.Contains(upper, "INFLUXDB_HTTP_HTTPS_ENABLED=TRUE") ||
-			strings.Contains(upper, "INFLUXDB_TLS") ||
-			strings.Contains(upper, "INFLUXDB_HTTP_HTTPS_CERTIFICATE") {
+			strings.Contains(upper, "INFLUXDB_HTTP_HTTPS_CERTIFICATE") ||
+			strings.Contains(upper, "INFLUXDB_TLS_CERT") {
 			return true
 		}
 	}
@@ -77,13 +79,21 @@ func hasTLS(envs []string) bool {
 }
 
 func hasDefaultPassword(envs []string) bool {
-	defaults := []string{"admin", "password", "changeme", "influxdb", "root", "default"}
+	defaults := []string{"admin", "password", "changeme", "default", "influxdb", "test"}
+	passwordKeys := []string{
+		"influxdb_http_auth_password=",
+		"influxdb_admin_password=",
+		"docker_influxdb_init_password=",
+		"docker_influxdb_init_admin_token=",
+	}
 	for _, e := range envs {
 		lower := strings.ToLower(e)
-		if strings.Contains(lower, "influxdb") && strings.Contains(lower, "password=") {
-			for _, d := range defaults {
-				if strings.HasSuffix(lower, "="+d) {
-					return true
+		for _, key := range passwordKeys {
+			if strings.Contains(lower, key) {
+				for _, d := range defaults {
+					if strings.HasSuffix(lower, "="+d) {
+						return true
+					}
 				}
 			}
 		}
@@ -91,30 +101,24 @@ func hasDefaultPassword(envs []string) bool {
 	return false
 }
 
-func hasWeakToken(envs []string) bool {
-	weakTokens := []string{"admin", "token", "secret", "changeme", "default", "test", "dev"}
+func hasAdminExposed(envs []string, ports []compose.PortMapping) bool {
+	authEnabled := false
+	bindAll := false
 	for _, e := range envs {
-		lower := strings.ToLower(e)
-		if strings.Contains(lower, "influxdb_admin_token=") || strings.Contains(lower, "docker_influxdb_init_admin_token=") {
-			for _, w := range weakTokens {
-				if strings.HasSuffix(lower, "="+w) {
-					return true
-				}
-			}
+		upper := strings.ToUpper(e)
+		if strings.Contains(upper, "INFLUXDB_HTTP_AUTH_ENABLED=TRUE") {
+			authEnabled = true
+		}
+		if strings.Contains(upper, "INFLUXDB_HTTP_BIND_ADDRESS") && strings.Contains(upper, "0.0.0.0") {
+			bindAll = true
 		}
 	}
-	return false
-}
-
-func hasDebugEnabled(envs []string) bool {
-	for _, e := range envs {
-		lower := strings.ToLower(e)
-		if strings.Contains(lower, "influxdb_logging_level=debug") ||
-			strings.Contains(lower, "influxdb_log_level=debug") {
-			return true
+	for _, p := range ports {
+		if p.TargetPort == 8086 && p.IsAllInterfaces() {
+			bindAll = true
 		}
 	}
-	return false
+	return bindAll && !authEnabled
 }
 
 func analyzeService(svc compose.Service) ServiceResult {
@@ -125,7 +129,7 @@ func analyzeService(svc compose.Service) ServiceResult {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "critical",
 			Rule:    "influxdb_no_auth",
-			Message: fmt.Sprintf("service %q: InfluxDB authentication not configured", svc.Name),
+			Message: fmt.Sprintf("service %q: InfluxDB authentication disabled or not configured", svc.Name),
 		})
 	}
 
@@ -133,7 +137,7 @@ func analyzeService(svc compose.Service) ServiceResult {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "high",
 			Rule:    "influxdb_no_tls",
-			Message: fmt.Sprintf("service %q: InfluxDB running without TLS", svc.Name),
+			Message: fmt.Sprintf("service %q: InfluxDB running without TLS encryption", svc.Name),
 		})
 	}
 
@@ -161,19 +165,11 @@ func analyzeService(svc compose.Service) ServiceResult {
 		})
 	}
 
-	if hasWeakToken(envs) {
+	if hasAdminExposed(envs, svc.Ports) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "critical",
-			Rule:    "influxdb_token_exposed",
-			Message: fmt.Sprintf("service %q: InfluxDB admin token is weak/default", svc.Name),
-		})
-	}
-
-	if hasDebugEnabled(envs) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "medium",
-			Rule:    "influxdb_debug_enabled",
-			Message: fmt.Sprintf("service %q: InfluxDB debug logging enabled — may leak sensitive data", svc.Name),
+			Rule:    "influxdb_admin_exposed",
+			Message: fmt.Sprintf("service %q: InfluxDB admin API exposed without authentication", svc.Name),
 		})
 	}
 
@@ -184,7 +180,7 @@ func Analyze(c *collect.Collected) Report {
 	r := Report{Path: c.Root}
 	for _, cf := range c.ComposeFiles {
 		for _, svc := range cf.Services {
-			if !isInfluxImage(svc.Image) {
+			if !isInfluxDBImage(svc.Image) {
 				continue
 			}
 			sr := analyzeService(svc)
@@ -199,10 +195,8 @@ func Analyze(c *collect.Collected) Report {
 					r.Summary.ExposedPort++
 				case "influxdb_default_password":
 					r.Summary.DefaultPassword++
-				case "influxdb_token_exposed":
-					r.Summary.TokenExposed++
-				case "influxdb_debug_enabled":
-					r.Summary.DebugEnabled++
+				case "influxdb_admin_exposed":
+					r.Summary.AdminExposed++
 				}
 			}
 		}
@@ -232,9 +226,9 @@ func FormatText(r Report) string {
 		b.WriteString("\n")
 	}
 
-	fmt.Fprintf(&b, "  Summary: no_auth=%d no_tls=%d exposed_port=%d default_password=%d token_exposed=%d debug=%d\n",
+	fmt.Fprintf(&b, "  Summary: no_auth=%d no_tls=%d exposed_port=%d default_password=%d admin_exposed=%d\n",
 		r.Summary.NoAuth, r.Summary.NoTLS, r.Summary.ExposedPort,
-		r.Summary.DefaultPassword, r.Summary.TokenExposed, r.Summary.DebugEnabled)
+		r.Summary.DefaultPassword, r.Summary.AdminExposed)
 
 	return b.String()
 }

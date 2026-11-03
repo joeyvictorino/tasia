@@ -8,170 +8,182 @@ import (
 	"github.com/joeyvictorino/tasia/internal/collect/compose"
 )
 
-func coll(services ...compose.Service) *collect.Collected {
-	return &collect.Collected{
-		Root:         "/test",
-		ComposeFiles: []compose.File{{Services: services}},
-	}
+func svc(name, image string, env []string, ports []compose.PortMapping) compose.Service {
+	return compose.Service{Name: name, Image: image, Environment: env, Ports: ports}
 }
 
-func TestIsRabbitmqImage(t *testing.T) {
-	tests := []struct{ img string; want bool }{
-		{"rabbitmq:3-management", true},
+func allIf(target int) compose.PortMapping {
+	return compose.PortMapping{HostPort: target, TargetPort: target, HostIP: "0.0.0.0"}
+}
+
+func col(svcs ...compose.Service) *collect.Collected {
+	return &collect.Collected{Root: ".", ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}}}
+}
+
+func colPath(path string, svcs ...compose.Service) *collect.Collected {
+	return &collect.Collected{Root: path, ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}}}
+}
+
+func TestIsRabbitMQImage(t *testing.T) {
+	tests := []struct {
+		image string
+		want  bool
+	}{
+		{"rabbitmq:3.12", true},
 		{"bitnami/rabbitmq:latest", true},
+		{"rabbitmq:3-management", true},
 		{"nginx:latest", false},
-		{"RABBITMQ:3", true},
 	}
-	for _, tc := range tests {
-		if got := isRabbitmqImage(tc.img); got != tc.want {
-			t.Errorf("isRabbitmqImage(%q) = %v, want %v", tc.img, got, tc.want)
+	for _, tt := range tests {
+		if got := isRabbitMQImage(tt.image); got != tt.want {
+			t.Errorf("isRabbitMQImage(%q) = %v, want %v", tt.image, got, tt.want)
 		}
 	}
 }
 
 func TestDefaultCredentials(t *testing.T) {
-	envs := []string{"RABBITMQ_DEFAULT_PASS=guest"}
-	if !hasDefaultCredentials(envs) {
-		t.Error("expected default credentials detected")
+	r := Analyze(col(svc("mq", "rabbitmq:3", nil, nil)))
+	if r.Summary.DefaultCredentials == 0 {
+		t.Error("expected rabbitmq_default_credentials finding when no credentials set")
 	}
 }
 
-func TestNoDefaultCredentials(t *testing.T) {
-	envs := []string{"RABBITMQ_DEFAULT_PASS=str0ngP@ss!"}
-	if hasDefaultCredentials(envs) {
-		t.Error("strong password should not trigger")
+func TestGuestGuestCredentials(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3",
+		[]string{"RABBITMQ_DEFAULT_USER=guest", "RABBITMQ_DEFAULT_PASS=guest"}, nil)))
+	if r.Summary.DefaultCredentials == 0 {
+		t.Error("expected rabbitmq_default_credentials finding for guest/guest")
 	}
 }
 
-func TestGuestAccess(t *testing.T) {
-	envs := []string{"RABBITMQ_DEFAULT_USER=guest"}
-	if !hasGuestAccess(envs) {
-		t.Error("expected guest access detected")
+func TestWeakPassword(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3",
+		[]string{"RABBITMQ_DEFAULT_USER=admin", "RABBITMQ_DEFAULT_PASS=password"}, nil)))
+	if r.Summary.DefaultCredentials == 0 {
+		t.Error("expected rabbitmq_default_credentials finding for weak password")
+	}
+}
+
+func TestStrongCredentials(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3",
+		[]string{"RABBITMQ_DEFAULT_USER=myuser", "RABBITMQ_DEFAULT_PASS=s3cur3P@ss!"}, nil)))
+	if r.Summary.DefaultCredentials != 0 {
+		t.Error("expected no rabbitmq_default_credentials finding with strong credentials")
 	}
 }
 
 func TestNoTLS(t *testing.T) {
-	envs := []string{"RABBITMQ_SSL=false"}
-	if !hasNoTLS(envs) {
-		t.Error("expected no TLS detected")
+	r := Analyze(col(svc("mq", "rabbitmq:3", nil, nil)))
+	if r.Summary.NoTLS == 0 {
+		t.Error("expected rabbitmq_no_tls finding")
 	}
 }
 
-func TestDebugEnabled(t *testing.T) {
-	envs := []string{"RABBITMQ_LOG=debug"}
-	if !hasDebugEnabled(envs) {
-		t.Error("expected debug detected")
+func TestTLSEnabled(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3",
+		[]string{"RABBITMQ_SSL_CERTFILE=/certs/cert.pem", "RABBITMQ_DEFAULT_USER=admin", "RABBITMQ_DEFAULT_PASS=s3cur3!"}, nil)))
+	if r.Summary.NoTLS != 0 {
+		t.Error("expected no rabbitmq_no_tls finding when TLS enabled")
 	}
 }
 
-func TestNoAuthBackend(t *testing.T) {
-	envs := []string{"AUTH_BACKENDS=none"}
-	if !hasNoAuthBackend(envs) {
-		t.Error("expected no auth backend detected")
+func TestManagementExposed(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3-management", nil, []compose.PortMapping{allIf(15672)})))
+	if r.Summary.ManagementExposed == 0 {
+		t.Error("expected rabbitmq_management_exposed finding")
 	}
 }
 
-func TestExposedManagementPort(t *testing.T) {
-	svc := compose.Service{
-		Name:  "rmq",
-		Image: "rabbitmq:3-management",
-		Ports: []compose.PortMapping{{HostPort: 15672, TargetPort: 15672, HostIP: ""}},
-	}
-	sr := analyzeService(svc)
-	found := false
-	for _, f := range sr.Findings {
-		if f.Rule == "rabbitmq_management_exposed" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("expected management exposed finding")
+func TestManagementNotExposedWithCustomUser(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3",
+		[]string{"RABBITMQ_DEFAULT_USER=admin", "RABBITMQ_DEFAULT_PASS=s3cur3!"},
+		[]compose.PortMapping{allIf(15672)})))
+	if r.Summary.ManagementExposed != 0 {
+		t.Error("expected no management_exposed finding with custom user")
 	}
 }
 
 func TestExposedAMQPPort(t *testing.T) {
-	svc := compose.Service{
-		Name:  "rmq",
-		Image: "rabbitmq",
-		Ports: []compose.PortMapping{{HostPort: 5672, TargetPort: 5672, HostIP: ""}},
-	}
-	sr := analyzeService(svc)
-	found := false
-	for _, f := range sr.Findings {
-		if f.Rule == "rabbitmq_exposed_port" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("expected exposed port finding")
+	r := Analyze(col(svc("mq", "rabbitmq:3", nil, []compose.PortMapping{allIf(5672)})))
+	if r.Summary.ExposedPort == 0 {
+		t.Error("expected rabbitmq_exposed_port finding for 5672")
 	}
 }
 
-func TestBoundPort(t *testing.T) {
-	svc := compose.Service{
-		Name:  "rmq",
-		Image: "rabbitmq",
-		Ports: []compose.PortMapping{{HostPort: 5672, TargetPort: 5672, HostIP: "127.0.0.1"}},
-	}
-	sr := analyzeService(svc)
-	for _, f := range sr.Findings {
-		if f.Rule == "rabbitmq_exposed_port" {
-			t.Error("localhost-bound port should not trigger")
-		}
+func TestExposedClusteringPort(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3", nil, []compose.PortMapping{allIf(25672)})))
+	if r.Summary.ExposedPort == 0 {
+		t.Error("expected rabbitmq_exposed_port finding for 25672")
 	}
 }
 
-func TestCleanService(t *testing.T) {
-	svc := compose.Service{
-		Name:  "rmq",
-		Image: "rabbitmq",
-	}
-	sr := analyzeService(svc)
-	if len(sr.Findings) != 0 {
-		t.Errorf("expected no findings, got %d", len(sr.Findings))
+func TestExposedSTOMPPort(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3", nil, []compose.PortMapping{allIf(61613)})))
+	if r.Summary.ExposedPort == 0 {
+		t.Error("expected rabbitmq_exposed_port finding for 61613")
 	}
 }
 
-func TestAnalyzeSkipsNonRabbitmq(t *testing.T) {
-	c := coll(compose.Service{Name: "web", Image: "nginx"})
-	r := Analyze(c)
+func TestMultiplePorts(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3", nil,
+		[]compose.PortMapping{allIf(5672), allIf(15672), allIf(25672)})))
+	if r.Summary.ExposedPort != 3 {
+		t.Errorf("expected 3 port findings, got %d", r.Summary.ExposedPort)
+	}
+}
+
+func TestGuestLoopbackDisabled(t *testing.T) {
+	r := Analyze(col(svc("mq", "rabbitmq:3",
+		[]string{"RABBITMQ_LOOPBACK_USERS=none", "RABBITMQ_DEFAULT_USER=admin", "RABBITMQ_DEFAULT_PASS=s3cur3!"},
+		[]compose.PortMapping{allIf(5672)})))
+	if r.Summary.GuestLoopback == 0 {
+		t.Error("expected rabbitmq_guest_loopback finding")
+	}
+}
+
+func TestNonRabbitMQSkipped(t *testing.T) {
+	r := Analyze(col(svc("web", "nginx:latest", nil, nil)))
 	if len(r.Services) != 0 {
-		t.Error("should skip non-rabbitmq services")
+		t.Errorf("expected 0 services, got %d", len(r.Services))
 	}
 }
 
-func TestAnalyzeSummary(t *testing.T) {
-	c := coll(compose.Service{
-		Name:        "rmq",
-		Image:       "rabbitmq",
-		Environment: []string{"RABBITMQ_DEFAULT_PASS=guest", "RABBITMQ_DEFAULT_USER=guest"},
-	})
-	r := Analyze(c)
-	if r.Summary.DefaultCredentials < 1 {
-		t.Error("expected default credentials in summary")
-	}
-	if r.Summary.GuestAccess < 1 {
-		t.Error("expected guest access in summary")
+func TestFormatText(t *testing.T) {
+	r := Analyze(colPath("/test", svc("mq", "rabbitmq:3", nil, nil)))
+	text := FormatText(r)
+	if !strings.Contains(text, "RabbitMQ Security Audit") {
+		t.Error("missing title")
 	}
 }
 
 func TestFormatTextEmpty(t *testing.T) {
-	r := Report{Path: "/test"}
+	r := Analyze(&collect.Collected{Root: "."})
 	text := FormatText(r)
-	if !strings.Contains(text, "No RabbitMQ") {
-		t.Error("should say no RabbitMQ services")
+	if !strings.Contains(text, "No RabbitMQ services found") {
+		t.Error("expected empty message")
 	}
 }
 
-func TestFormatTextWithFindings(t *testing.T) {
-	c := coll(compose.Service{
-		Name:        "rmq",
-		Image:       "rabbitmq",
-		Environment: []string{"RABBITMQ_DEFAULT_PASS=guest"},
-	})
-	r := Analyze(c)
-	text := FormatText(r)
-	if !strings.Contains(text, "rabbitmq_default_credentials") {
-		t.Error("format should include finding rule")
+func TestEmptyCollection(t *testing.T) {
+	r := Analyze(&collect.Collected{Root: "."})
+	if len(r.Services) != 0 {
+		t.Error("expected empty report")
+	}
+}
+
+func TestReportPath(t *testing.T) {
+	r := Analyze(colPath("/mydir"))
+	if r.Path != "/mydir" {
+		t.Errorf("expected /mydir, got %s", r.Path)
+	}
+}
+
+func TestMultipleServices(t *testing.T) {
+	r := Analyze(col(
+		svc("mq1", "rabbitmq:3", nil, nil),
+		svc("mq2", "bitnami/rabbitmq", nil, nil),
+	))
+	if len(r.Services) != 2 {
+		t.Errorf("expected 2 services, got %d", len(r.Services))
 	}
 }
