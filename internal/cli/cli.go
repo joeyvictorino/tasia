@@ -612,6 +612,10 @@ func Run(args []string) error {
 		return runCompletions(args[1:])
 	case "grafanaaudit":
 		return runGrafanaaudit(args[1:])
+	case "couchdbaudit":
+		return runCouchdbaudit(args[1:])
+	case "timescaledbaudit":
+		return runTimescaledbaudit(args[1:])
 	case "prometheusaudit":
 		return runPrometheusaudit(args[1:])
 	case "version", "--version", "-v":
