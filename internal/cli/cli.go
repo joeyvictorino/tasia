@@ -458,6 +458,8 @@ func Run(args []string) error {
 		return runTlsconfig(args[1:])
 	case "corsconfig":
 		return runCorsconfig(args[1:])
+	case "socketbind":
+		return runSocketbind(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
