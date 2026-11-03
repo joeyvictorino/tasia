@@ -480,6 +480,10 @@ func Run(args []string) error {
 		return runSyslog(args[1:])
 	case "dbus":
 		return runDbus(args[1:])
+	case "pipeclean":
+		return runPipeclean(args[1:])
+	case "cgroupescape":
+		return runCgroupescape(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
