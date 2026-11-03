@@ -370,6 +370,10 @@ func Run(args []string) error {
 		return runRegistryauth(args[1:])
 	case "dnsrebind":
 		return runDnsrebind(args[1:])
+	case "fileperm":
+		return runFileperm(args[1:])
+	case "logrotate":
+		return runLogrotate(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
