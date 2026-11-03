@@ -426,6 +426,10 @@ func Run(args []string) error {
 		return runSecretrotation(args[1:])
 	case "timezoneleak":
 		return runTimezoneleak(args[1:])
+	case "logforward":
+		return runLogforward(args[1:])
+	case "dnsleak":
+		return runDnsleak(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
