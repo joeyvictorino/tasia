@@ -402,6 +402,10 @@ func Run(args []string) error {
 		return runPidlimit(args[1:])
 	case "swaplimit":
 		return runSwaplimit(args[1:])
+	case "fdlimit":
+		return runFdlimit(args[1:])
+	case "loopdev":
+		return runLoopdev(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
