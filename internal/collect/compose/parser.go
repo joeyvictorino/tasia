@@ -1,3 +1,8 @@
+// Package compose parses Docker Compose files using yaml.v3 nodes for
+// accurate line numbers. It extracts service definitions, published
+// ports, volumes, environment variables, network configuration and
+// restart policies without evaluating or interpolating variable
+// references.
 package compose
 
 import (
@@ -31,9 +36,173 @@ type Service struct {
 	PrivLine        int
 	Environment     []string // "KEY=val" entries (from map or list form)
 	EnvLine         int      // line of the 'environment:' key if present
-	NetworkMode     string   // value of network_mode: (e.g. "host")
+	NetworkMode     string // value of network_mode: (e.g. "host")
 	NetworkModeLine int
-	// Raw for future
+	Restart         string // value of restart: (e.g. "always", "unless-stopped")
+	RestartLine     int
+	CapAdd          []string
+	CapAddLine      int
+	CapDrop         []string
+	CapDropLine     int
+	SecurityOpt     []string
+	SecurityOptLine int
+	// Healthcheck fields
+	Healthcheck     *Healthcheck
+	HealthcheckLine int
+	// Logging fields
+	Logging     *LoggingConfig
+	LoggingLine int
+	// Resource limit fields
+	MemLimit       string
+	MemLimitLine   int
+	MemReservation string
+	MemResLine     int
+	CPUs           string
+	CPUsLine       int
+	PidsLimit      int
+	PidsLimitLine  int
+	ReadOnly       bool
+	ReadOnlyLine   int
+	// Tmpfs fields
+	Tmpfs     []string
+	TmpfsLine int
+	// DNS fields
+	DNS          []string
+	DNSLine      int
+	DNSSearch    []string
+	DNSSearchLine int
+	// User namespace mode
+	UsernsMode     string
+	UsernsModeLine int
+	// PID namespace mode
+	PidMode     string
+	PidModeLine int
+	// IPC namespace mode
+	IpcMode     string
+	IpcModeLine int
+	// Labels
+	Labels    map[string]string
+	LabelsLine int
+	// Sysctls
+	Sysctls     map[string]string
+	SysctlsLine int
+	// Devices
+	Devices     []string
+	DevicesLine int
+	// Ulimits
+	Ulimits     map[string]UlimitValue
+	UlimitsLine int
+	// DependsOn
+	DependsOn     map[string]DependsOnCondition
+	DependsOnLine int
+	// Entrypoint / Command
+	Entrypoint     []string
+	EntrypointLine int
+	Command        []string
+	CommandLine    int
+	// OOM fields
+	OomKillDisable     bool
+	OomKillDisableLine int
+	OomScoreAdj        int
+	OomScoreAdjLine    int
+	OomScoreAdjSet     bool
+	MemswapLimit       string
+	MemswapLimitLine   int
+	// Deploy restart policy
+	DeployRestartPolicy *DeployRestartPolicy
+	DeployRestartLine   int
+	// UTS namespace mode
+	UtsMode     string
+	UtsModeLine int
+	// Cgroup parent
+	CgroupParent     string
+	CgroupParentLine int
+	// Cgroup namespace mode
+	CgroupNsMode     string
+	CgroupNsModeLine int
+	// Runtime fields
+	StdinOpen         bool
+	StdinOpenLine     int
+	Tty               bool
+	TtyLine           int
+	Init              bool
+	InitLine          int
+	StopSignal        string
+	StopSignalLine    int
+	StopGracePeriod   string
+	StopGracePeriodLine int
+	ShmSize           string
+	ShmSizeLine       int
+	Runtime           string
+	RuntimeLine       int
+	// CPU pinning fields
+	CpusetCpus     string
+	CpusetCpusLine int
+	CpusetMems     string
+	CpusetMemsLine int
+	CpuShares      int
+	CpuSharesLine  int
+	// Block I/O fields
+	BlkioWeight         int
+	BlkioWeightLine     int
+	BlkioWeightDevice   []BlkioWeightDevice
+	BlkioDeviceReadBps  []BlkioRateDevice
+	BlkioDeviceWriteBps []BlkioRateDevice
+	BlkioDeviceReadIOps []BlkioRateDevice
+	BlkioDeviceWriteIOps []BlkioRateDevice
+	BlkioConfigLine     int
+	// User directive
+	User     string
+	UserLine int
+	// Group name (parsed from user:group)
+	GroupName string
+}
+
+// BlkioWeightDevice represents a per-device weight override in blkio_config.
+type BlkioWeightDevice struct {
+	Path   string
+	Weight int
+}
+
+// BlkioRateDevice represents a device rate limit in blkio_config.
+type BlkioRateDevice struct {
+	Path string
+	Rate string
+}
+
+// UlimitValue represents a ulimit with soft and hard limits.
+type UlimitValue struct {
+	Soft int64
+	Hard int64
+}
+
+// DependsOnCondition represents a depends_on entry with an optional condition.
+type DependsOnCondition struct {
+	Condition string // "service_started", "service_healthy", "service_completed_successfully", or ""
+}
+
+// DeployRestartPolicy represents the deploy.restart_policy block.
+type DeployRestartPolicy struct {
+	Condition   string
+	Delay       string
+	MaxAttempts int
+	Window      string
+}
+
+// Healthcheck represents the healthcheck block in a compose service.
+type Healthcheck struct {
+	Test        []string
+	Interval    string
+	Timeout     string
+	Retries     int
+	StartPeriod string
+	Disable     bool
+}
+
+// LoggingConfig represents the logging block in a compose service.
+type LoggingConfig struct {
+	Driver  string
+	Options map[string]string
 }
 
 type PortMapping struct {
@@ -131,6 +300,58 @@ func Parse(path string) (*File, error) {
 				svc.NetworkMode = strings.Trim(nmNode.Value, `"' `)
 				svc.NetworkModeLine = nmNode.Line
 			}
+			// user
+			userNode := getMapValue(svcNode, "user")
+			if userNode != nil {
+				raw := strings.Trim(userNode.Value, `"' `)
+				svc.User = raw
+				svc.UserLine = userNode.Line
+				if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
+					svc.GroupName = parts[1]
+				}
+			}
+			// userns_mode
+			unsNode := getMapValue(svcNode, "userns_mode")
+			if unsNode != nil {
+				svc.UsernsMode = strings.Trim(unsNode.Value, `"' `)
+				svc.UsernsModeLine = unsNode.Line
+			}
+			// pid
+			pidNode := getMapValue(svcNode, "pid")
+			if pidNode != nil {
+				svc.PidMode = strings.Trim(pidNode.Value, `"' `)
+				svc.PidModeLine = pidNode.Line
+			}
+			// ipc
+			ipcNode := getMapValue(svcNode, "ipc")
+			if ipcNode != nil {
+				svc.IpcMode = strings.Trim(ipcNode.Value, `"' `)
+				svc.IpcModeLine = ipcNode.Line
+			}
+			// uts
+			utsNode := getMapValue(svcNode, "uts")
+			if utsNode != nil {
+				svc.UtsMode = strings.Trim(utsNode.Value, `"' `)
+				svc.UtsModeLine = utsNode.Line
+			}
+			// cgroup_parent
+			cgNode := getMapValue(svcNode, "cgroup_parent")
+			if cgNode != nil {
+				svc.CgroupParent = strings.Trim(cgNode.Value, `"' `)
+				svc.CgroupParentLine = cgNode.Line
+			}
+			// cgroup (cgroup namespace mode)
+			cgNsNode := getMapValue(svcNode, "cgroup")
+			if cgNsNode != nil {
+				svc.CgroupNsMode = strings.Trim(cgNsNode.Value, `"' `)
+				svc.CgroupNsModeLine = cgNsNode.Line
+			}
+			// restart
+			restartNode := getMapValue(svcNode, "restart")
+			if restartNode != nil {
+				svc.Restart = strings.Trim(restartNode.Value, `"' `)
+				svc.RestartLine = restartNode.Line
+			}
 			// volumes for broad mounts / docker.sock — handle both short form
 			// ("host:container[:mode]") and long form (type/source/target maps).
 			volsNode := getMapValue(svcNode, "volumes")
@@ -167,6 +388,472 @@ func Parse(path string) (*File, error) {
 					}
 				}
 			}
+			// cap_add
+			capAddNode := getMapValue(svcNode, "cap_add")
+			if capAddNode != nil {
+				svc.CapAddLine = capAddNode.Line
+				for _, c := range capAddNode.Content {
+					svc.CapAdd = append(svc.CapAdd, strings.ToUpper(strings.TrimSpace(c.Value)))
+				}
+			}
+			// cap_drop
+			capDropNode := getMapValue(svcNode, "cap_drop")
+			if capDropNode != nil {
+				svc.CapDropLine = capDropNode.Line
+				for _, c := range capDropNode.Content {
+					svc.CapDrop = append(svc.CapDrop, strings.ToUpper(strings.TrimSpace(c.Value)))
+				}
+			}
+			// security_opt
+			secOptNode := getMapValue(svcNode, "security_opt")
+			if secOptNode != nil {
+				svc.SecurityOptLine = secOptNode.Line
+				for _, s := range secOptNode.Content {
+					svc.SecurityOpt = append(svc.SecurityOpt, s.Value)
+				}
+			}
+			// healthcheck
+			hcNode := getMapValue(svcNode, "healthcheck")
+			if hcNode != nil {
+				svc.HealthcheckLine = hcNode.Line
+				hc := &Healthcheck{}
+				testNode := getMapValue(hcNode, "test")
+				if testNode != nil {
+					if testNode.Kind == yaml.SequenceNode {
+						for _, t := range testNode.Content {
+							hc.Test = append(hc.Test, t.Value)
+						}
+					} else {
+						hc.Test = []string{"CMD-SHELL", testNode.Value}
+					}
+				}
+				if v := getScalar(hcNode, "interval"); v != "" {
+					hc.Interval = v
+				}
+				if v := getScalar(hcNode, "timeout"); v != "" {
+					hc.Timeout = v
+				}
+				if v := getScalar(hcNode, "start_period"); v != "" {
+					hc.StartPeriod = v
+				}
+				if v := getScalar(hcNode, "retries"); v != "" {
+					if n, ok := atoiSafe(v); ok {
+						hc.Retries = n
+					}
+				}
+				disNode := getMapValue(hcNode, "disable")
+				if disNode != nil && (disNode.Value == "true" || disNode.Value == "yes") {
+					hc.Disable = true
+				}
+				if len(hc.Test) > 0 && len(hc.Test) == 1 && hc.Test[0] == "NONE" {
+					hc.Disable = true
+				}
+				svc.Healthcheck = hc
+			}
+			// logging
+			logNode := getMapValue(svcNode, "logging")
+			if logNode != nil {
+				svc.LoggingLine = logNode.Line
+				lc := &LoggingConfig{Options: map[string]string{}}
+				if d := getScalar(logNode, "driver"); d != "" {
+					lc.Driver = d
+				}
+				optNode := getMapValue(logNode, "options")
+				if optNode != nil && optNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(optNode.Content); j += 2 {
+						lc.Options[optNode.Content[j].Value] = optNode.Content[j+1].Value
+					}
+				}
+				svc.Logging = lc
+			}
+			// mem_limit
+			mlNode := getMapValue(svcNode, "mem_limit")
+			if mlNode != nil {
+				svc.MemLimit = mlNode.Value
+				svc.MemLimitLine = mlNode.Line
+			}
+			// mem_reservation
+			mrNode := getMapValue(svcNode, "mem_reservation")
+			if mrNode != nil {
+				svc.MemReservation = mrNode.Value
+				svc.MemResLine = mrNode.Line
+			}
+			// cpus
+			cpuNode := getMapValue(svcNode, "cpus")
+			if cpuNode != nil {
+				svc.CPUs = cpuNode.Value
+				svc.CPUsLine = cpuNode.Line
+			}
+			// cpuset / cpuset_cpus / cpuset_mems / cpu_shares
+			csNode := getMapValue(svcNode, "cpuset")
+			if csNode != nil {
+				svc.CpusetCpus = strings.Trim(csNode.Value, `"' `)
+				svc.CpusetCpusLine = csNode.Line
+			}
+			csCpuNode := getMapValue(svcNode, "cpuset_cpus")
+			if csCpuNode != nil {
+				svc.CpusetCpus = strings.Trim(csCpuNode.Value, `"' `)
+				svc.CpusetCpusLine = csCpuNode.Line
+			}
+			csMemNode := getMapValue(svcNode, "cpuset_mems")
+			if csMemNode != nil {
+				svc.CpusetMems = strings.Trim(csMemNode.Value, `"' `)
+				svc.CpusetMemsLine = csMemNode.Line
+			}
+			cpuSharesNode := getMapValue(svcNode, "cpu_shares")
+			if cpuSharesNode != nil {
+				if n, ok := atoiSafe(cpuSharesNode.Value); ok {
+					svc.CpuShares = n
+				}
+				svc.CpuSharesLine = cpuSharesNode.Line
+			}
+			// blkio_config
+			blkioNode := getMapValue(svcNode, "blkio_config")
+			if blkioNode != nil {
+				svc.BlkioConfigLine = blkioNode.Line
+				wNode := getMapValue(blkioNode, "weight")
+				if wNode != nil {
+					if n, ok := atoiSafe(wNode.Value); ok {
+						svc.BlkioWeight = n
+					}
+					svc.BlkioWeightLine = wNode.Line
+				}
+				wdNode := getMapValue(blkioNode, "weight_device")
+				if wdNode != nil {
+					for _, item := range seqItems(wdNode) {
+						p := getScalar(item, "path")
+						ws := getScalar(item, "weight")
+						w := 0
+						if ws != "" {
+							if n, ok := atoiSafe(ws); ok {
+								w = n
+							}
+						}
+						if p != "" {
+							svc.BlkioWeightDevice = append(svc.BlkioWeightDevice, BlkioWeightDevice{Path: p, Weight: w})
+						}
+					}
+				}
+				for _, key := range []string{"device_read_bps", "device_write_bps", "device_read_iops", "device_write_iops"} {
+					dNode := getMapValue(blkioNode, key)
+					if dNode == nil {
+						continue
+					}
+					for _, item := range seqItems(dNode) {
+						p := getScalar(item, "path")
+						r := getScalar(item, "rate")
+						if p != "" {
+							dev := BlkioRateDevice{Path: p, Rate: r}
+							switch key {
+							case "device_read_bps":
+								svc.BlkioDeviceReadBps = append(svc.BlkioDeviceReadBps, dev)
+							case "device_write_bps":
+								svc.BlkioDeviceWriteBps = append(svc.BlkioDeviceWriteBps, dev)
+							case "device_read_iops":
+								svc.BlkioDeviceReadIOps = append(svc.BlkioDeviceReadIOps, dev)
+							case "device_write_iops":
+								svc.BlkioDeviceWriteIOps = append(svc.BlkioDeviceWriteIOps, dev)
+							}
+						}
+					}
+				}
+			}
+			// pids_limit
+			pidsNode := getMapValue(svcNode, "pids_limit")
+			if pidsNode != nil {
+				if n, ok := atoiSafe(pidsNode.Value); ok {
+					svc.PidsLimit = n
+				}
+				svc.PidsLimitLine = pidsNode.Line
+			}
+			// read_only
+			roNode := getMapValue(svcNode, "read_only")
+			if roNode != nil && (roNode.Value == "true" || roNode.Value == "yes") {
+				svc.ReadOnly = true
+				svc.ReadOnlyLine = roNode.Line
+			}
+			// deploy.resources (v3 format)
+			deployNode := getMapValue(svcNode, "deploy")
+			if deployNode != nil {
+				resNode := getMapValue(deployNode, "resources")
+				if resNode != nil {
+					limNode := getMapValue(resNode, "limits")
+					if limNode != nil {
+						if svc.MemLimit == "" {
+							if v := getScalar(limNode, "memory"); v != "" {
+								svc.MemLimit = v
+							}
+						}
+						if svc.CPUs == "" {
+							if v := getScalar(limNode, "cpus"); v != "" {
+								svc.CPUs = v
+							}
+						}
+						if svc.PidsLimit == 0 {
+							if v := getScalar(limNode, "pids"); v != "" {
+								if n, ok := atoiSafe(v); ok {
+									svc.PidsLimit = n
+								}
+							}
+						}
+					}
+					resrvNode := getMapValue(resNode, "reservations")
+					if resrvNode != nil && svc.MemReservation == "" {
+						if v := getScalar(resrvNode, "memory"); v != "" {
+							svc.MemReservation = v
+						}
+					}
+				}
+			}
+			// oom_kill_disable
+			oomKillNode := getMapValue(svcNode, "oom_kill_disable")
+			if oomKillNode != nil && (oomKillNode.Value == "true" || oomKillNode.Value == "yes") {
+				svc.OomKillDisable = true
+				svc.OomKillDisableLine = oomKillNode.Line
+			}
+			// oom_score_adj
+			oomScoreNode := getMapValue(svcNode, "oom_score_adj")
+			if oomScoreNode != nil {
+				if n, ok := atoiSafe(oomScoreNode.Value); ok {
+					svc.OomScoreAdj = n
+					svc.OomScoreAdjSet = true
+					svc.OomScoreAdjLine = oomScoreNode.Line
+				}
+			}
+			// memswap_limit
+			mswapNode := getMapValue(svcNode, "memswap_limit")
+			if mswapNode != nil {
+				svc.MemswapLimit = mswapNode.Value
+				svc.MemswapLimitLine = mswapNode.Line
+			}
+			// deploy.restart_policy
+			if deployNode != nil {
+				rpNode := getMapValue(deployNode, "restart_policy")
+				if rpNode != nil {
+					svc.DeployRestartLine = rpNode.Line
+					rp := &DeployRestartPolicy{}
+					if c := getScalar(rpNode, "condition"); c != "" {
+						rp.Condition = c
+					}
+					if d := getScalar(rpNode, "delay"); d != "" {
+						rp.Delay = d
+					}
+					if ma := getScalar(rpNode, "max_attempts"); ma != "" {
+						if n, ok := atoiSafe(ma); ok {
+							rp.MaxAttempts = n
+						}
+					}
+					if w := getScalar(rpNode, "window"); w != "" {
+						rp.Window = w
+					}
+					svc.DeployRestartPolicy = rp
+				}
+			}
+			// dns
+			dnsNode := getMapValue(svcNode, "dns")
+			if dnsNode != nil {
+				svc.DNSLine = dnsNode.Line
+				if dnsNode.Kind == yaml.SequenceNode {
+					for _, d := range dnsNode.Content {
+						svc.DNS = append(svc.DNS, d.Value)
+					}
+				} else {
+					svc.DNS = append(svc.DNS, dnsNode.Value)
+				}
+			}
+			// dns_search
+			dnsSearchNode := getMapValue(svcNode, "dns_search")
+			if dnsSearchNode != nil {
+				svc.DNSSearchLine = dnsSearchNode.Line
+				if dnsSearchNode.Kind == yaml.SequenceNode {
+					for _, d := range dnsSearchNode.Content {
+						svc.DNSSearch = append(svc.DNSSearch, d.Value)
+					}
+				} else {
+					svc.DNSSearch = append(svc.DNSSearch, dnsSearchNode.Value)
+				}
+			}
+			// labels
+			labelsNode := getMapValue(svcNode, "labels")
+			if labelsNode != nil {
+				svc.LabelsLine = labelsNode.Line
+				svc.Labels = map[string]string{}
+				if labelsNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(labelsNode.Content); j += 2 {
+						svc.Labels[labelsNode.Content[j].Value] = labelsNode.Content[j+1].Value
+					}
+				} else if labelsNode.Kind == yaml.SequenceNode {
+					for _, l := range labelsNode.Content {
+						if idx := strings.Index(l.Value, "="); idx > 0 {
+							svc.Labels[l.Value[:idx]] = l.Value[idx+1:]
+						} else {
+							svc.Labels[l.Value] = ""
+						}
+					}
+				}
+			}
+			// tmpfs
+			tmpfsNode := getMapValue(svcNode, "tmpfs")
+			if tmpfsNode != nil {
+				svc.TmpfsLine = tmpfsNode.Line
+				if tmpfsNode.Kind == yaml.SequenceNode {
+					for _, t := range tmpfsNode.Content {
+						svc.Tmpfs = append(svc.Tmpfs, t.Value)
+					}
+				} else {
+					svc.Tmpfs = append(svc.Tmpfs, tmpfsNode.Value)
+				}
+			}
+			// sysctls
+			sysctlsNode := getMapValue(svcNode, "sysctls")
+			if sysctlsNode != nil {
+				svc.SysctlsLine = sysctlsNode.Line
+				svc.Sysctls = map[string]string{}
+				if sysctlsNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(sysctlsNode.Content); j += 2 {
+						svc.Sysctls[sysctlsNode.Content[j].Value] = sysctlsNode.Content[j+1].Value
+					}
+				} else if sysctlsNode.Kind == yaml.SequenceNode {
+					for _, s := range sysctlsNode.Content {
+						if idx := strings.Index(s.Value, "="); idx > 0 {
+							svc.Sysctls[s.Value[:idx]] = s.Value[idx+1:]
+						}
+					}
+				}
+			}
+			// devices
+			devicesNode := getMapValue(svcNode, "devices")
+			if devicesNode != nil {
+				svc.DevicesLine = devicesNode.Line
+				for _, d := range devicesNode.Content {
+					svc.Devices = append(svc.Devices, d.Value)
+				}
+			}
+			// depends_on
+			depsNode := getMapValue(svcNode, "depends_on")
+			if depsNode != nil {
+				svc.DependsOnLine = depsNode.Line
+				svc.DependsOn = map[string]DependsOnCondition{}
+				if depsNode.Kind == yaml.SequenceNode {
+					for _, d := range depsNode.Content {
+						svc.DependsOn[d.Value] = DependsOnCondition{}
+					}
+				} else if depsNode.Kind == yaml.MappingNode {
+					for j := 0; j < len(depsNode.Content); j += 2 {
+						depName := depsNode.Content[j].Value
+						depVal := depsNode.Content[j+1]
+						cond := DependsOnCondition{}
+						if depVal.Kind == yaml.MappingNode {
+							if c := getScalar(depVal, "condition"); c != "" {
+								cond.Condition = c
+							}
+						}
+						svc.DependsOn[depName] = cond
+					}
+				}
+			}
+			// entrypoint
+			epNode := getMapValue(svcNode, "entrypoint")
+			if epNode != nil {
+				svc.EntrypointLine = epNode.Line
+				if epNode.Kind == yaml.SequenceNode {
+					for _, e := range epNode.Content {
+						svc.Entrypoint = append(svc.Entrypoint, e.Value)
+					}
+				} else {
+					svc.Entrypoint = []string{epNode.Value}
+				}
+			}
+			// command
+			cmdNode := getMapValue(svcNode, "command")
+			if cmdNode != nil {
+				svc.CommandLine = cmdNode.Line
+				if cmdNode.Kind == yaml.SequenceNode {
+					for _, c := range cmdNode.Content {
+						svc.Command = append(svc.Command, c.Value)
+					}
+				} else {
+					svc.Command = []string{cmdNode.Value}
+				}
+			}
+			// ulimits
+			ulimitsNode := getMapValue(svcNode, "ulimits")
+			if ulimitsNode != nil && ulimitsNode.Kind == yaml.MappingNode {
+				svc.UlimitsLine = ulimitsNode.Line
+				svc.Ulimits = map[string]UlimitValue{}
+				for j := 0; j < len(ulimitsNode.Content); j += 2 {
+					name := ulimitsNode.Content[j].Value
+					valNode := ulimitsNode.Content[j+1]
+					var uv UlimitValue
+					if valNode.Kind == yaml.MappingNode {
+						if s := getScalar(valNode, "soft"); s != "" {
+							if n, ok := atoiSafe64(s); ok {
+								uv.Soft = n
+							} else if s == "-1" || strings.ToLower(s) == "unlimited" {
+								uv.Soft = -1
+							}
+						}
+						if h := getScalar(valNode, "hard"); h != "" {
+							if n, ok := atoiSafe64(h); ok {
+								uv.Hard = n
+							} else if h == "-1" || strings.ToLower(h) == "unlimited" {
+								uv.Hard = -1
+							}
+						}
+					} else {
+						if n, ok := atoiSafe64(valNode.Value); ok {
+							uv.Soft = n
+							uv.Hard = n
+						} else if valNode.Value == "-1" || strings.ToLower(valNode.Value) == "unlimited" {
+							uv.Soft = -1
+							uv.Hard = -1
+						}
+					}
+					svc.Ulimits[name] = uv
+				}
+			}
+			// stdin_open
+			stdinNode := getMapValue(svcNode, "stdin_open")
+			if stdinNode != nil && (stdinNode.Value == "true" || stdinNode.Value == "yes") {
+				svc.StdinOpen = true
+				svc.StdinOpenLine = stdinNode.Line
+			}
+			// tty
+			ttyNode := getMapValue(svcNode, "tty")
+			if ttyNode != nil && (ttyNode.Value == "true" || ttyNode.Value == "yes") {
+				svc.Tty = true
+				svc.TtyLine = ttyNode.Line
+			}
+			// init
+			initNode := getMapValue(svcNode, "init")
+			if initNode != nil && (initNode.Value == "true" || initNode.Value == "yes") {
+				svc.Init = true
+				svc.InitLine = initNode.Line
+			}
+			// stop_signal
+			ssNode := getMapValue(svcNode, "stop_signal")
+			if ssNode != nil {
+				svc.StopSignal = strings.Trim(ssNode.Value, `"' `)
+				svc.StopSignalLine = ssNode.Line
+			}
+			// stop_grace_period
+			sgpNode := getMapValue(svcNode, "stop_grace_period")
+			if sgpNode != nil {
+				svc.StopGracePeriod = strings.Trim(sgpNode.Value, `"' `)
+				svc.StopGracePeriodLine = sgpNode.Line
+			}
+			// shm_size
+			shmNode := getMapValue(svcNode, "shm_size")
+			if shmNode != nil {
+				svc.ShmSize = strings.Trim(shmNode.Value, `"' `)
+				svc.ShmSizeLine = shmNode.Line
+			}
+			// runtime
+			rtNode := getMapValue(svcNode, "runtime")
+			if rtNode != nil {
+				svc.Runtime = strings.Trim(rtNode.Value, `"' `)
+				svc.RuntimeLine = rtNode.Line
+			}
 			f.Services = append(f.Services, svc)
 		}
 	}
@@ -197,6 +884,16 @@ func getScalar(node *yaml.Node, key string) string {
 		return v.Value
 	}
 	return ""
+}
+
+func seqItems(node *yaml.Node) []*yaml.Node {
+	if node == nil {
+		return nil
+	}
+	if node.Kind == yaml.SequenceNode {
+		return node.Content
+	}
+	return nil
 }
 
 func getMapValue(node *yaml.Node, key string) *yaml.Node {
@@ -309,5 +1006,10 @@ func splitPortRaw(s string) []string {
 
 func atoiSafe(s string) (int, bool) {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
+	return n, err == nil
+}
+
+func atoiSafe64(s string) (int64, bool) {
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return n, err == nil
 }

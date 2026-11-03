@@ -81,3 +81,109 @@ func TestMalformedComposeIsRecordedNotSilentlySkipped(t *testing.T) {
 		t.Errorf("parse error path = %q, want relative docker-compose.yml", c.ParseErrors[0].Path)
 	}
 }
+
+func TestIsComposeFile(t *testing.T) {
+	yes := []string{
+		"docker-compose.yml", "docker-compose.yaml",
+		"compose.yml", "compose.yaml",
+		"docker-compose.override.yml", "docker-compose.override.yaml",
+		"docker-compose.prod.yml", "docker-compose.dev.yaml",
+		"compose.override.yml", "compose.staging.yaml",
+	}
+	no := []string{
+		"docker-compose.env", "compose.json", "readme.yml",
+		"docker-compose.yml.bak", "notcompose.yml",
+	}
+	for _, name := range yes {
+		if !isComposeFile(name) {
+			t.Errorf("isComposeFile(%q) = false, want true", name)
+		}
+	}
+	for _, name := range no {
+		if isComposeFile(name) {
+			t.Errorf("isComposeFile(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestOverrideComposeFilesCollected(t *testing.T) {
+	tmp := t.TempDir()
+	base := `services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+`
+	override := `services:
+  ollama:
+    ports:
+      - "11435:11434"
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.yml"), []byte(base), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "docker-compose.override.yml"), []byte(override), 0644); err != nil {
+		t.Fatal(err)
+	}
+	col, err := WalkAndCollect(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(col.ComposeFiles) != 2 {
+		t.Fatalf("expected 2 compose files (base + override), got %d", len(col.ComposeFiles))
+	}
+}
+
+func TestLooksLikeSecretValue(t *testing.T) {
+	cases := []struct {
+		value   string
+		pattern string
+	}{
+		{"sk-1234567890abcdef1234567890abcdef", "sk- prefix (OpenAI/Stripe)"},
+		{"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef01", "ghp_ prefix (GitHub PAT)"},
+		{"AKIAIOSFODNN7EXAMPLE", "AKIA prefix (AWS access key)"},
+		{"xoxb-123456789012-1234567890123-AbCd", "xoxb- prefix (Slack bot)"},
+		{"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJ prefix (JWT/base64 token)"},
+		{"0123456789abcdef0123456789abcdef", "hex string >=32 chars"},
+		{"hf_ABCDEFGHIJKLMNOPQRSTUVWXyz", "hf_ prefix (Hugging Face)"},
+		{"changeme", ""},
+		{"hello", ""},
+		{"", ""},
+		{"TODO", ""},
+		{"short", ""},
+	}
+	for _, tc := range cases {
+		got := LooksLikeSecretValue(tc.value)
+		if got != tc.pattern {
+			t.Errorf("LooksLikeSecretValue(%q) = %q, want %q", tc.value, got, tc.pattern)
+		}
+	}
+}
+
+func TestEnvFileSecretValueDetection(t *testing.T) {
+	dir, err := filepath.Abs(filepath.Join("..", "..", "testdata", "env-secrets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	col, err := WalkAndCollect(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(col.EnvFiles) == 0 {
+		t.Fatal("expected env files from testdata/env-secrets")
+	}
+	hasValuePattern := false
+	for _, ef := range col.EnvFiles {
+		for _, key := range ef.Keys {
+			if key.ValuePattern != "" {
+				hasValuePattern = true
+			}
+			if strings.Contains(key.ValuePattern, "sk-1234") || strings.Contains(key.ValuePattern, "ghp_ABCDE") {
+				t.Errorf("actual value leaked into ValuePattern: %s", key.ValuePattern)
+			}
+		}
+	}
+	if !hasValuePattern {
+		t.Error("expected at least one key with a ValuePattern from testdata/env-secrets")
+	}
+}

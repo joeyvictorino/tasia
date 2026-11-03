@@ -35,7 +35,9 @@ func TestKitchenSinkFixture(t *testing.T) {
 		"exposed_inference", "exposed_ui", "exposed_vector", "exposed_datastore",
 		"docker_socket_mount", "privileged_container", "permissive_cors",
 		"latest_image", "broad_bind_mount", "env_token_key",
-		"no_internal_network", "no_ai_stack_manifest",
+		"no_internal_network", "no_ai_stack_manifest", "exposed_agent_runtime",
+		"dockerfile_user_root", "dockerfile_expose",
+		"reverse_proxy_no_auth",
 	}
 	for _, id := range want {
 		if !seen[id] {
@@ -52,5 +54,11 @@ func TestKitchenSinkFixture(t *testing.T) {
 		if strings.HasPrefix(f.ID, "exposed_") && f.Line == 0 {
 			t.Errorf("exposure finding %s missing line number", f.ID)
 		}
+		if f.ID == "broad_bind_mount" && strings.Contains(f.Evidence, "/data") && f.Severity != SeverityHigh {
+			t.Errorf("the agent runtime's writable project mount should be HIGH, got %s", f.Severity)
+		}
+	}
+	if len(c.DetectedAgentRuntimes) != 1 || c.DetectedAgentRuntimes[0] != "n8n" {
+		t.Errorf("collector should list the n8n agent runtime, got %v", c.DetectedAgentRuntimes)
 	}
 }

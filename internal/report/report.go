@@ -1,3 +1,8 @@
+// Package report turns [rules.Finding] slices into output: terminal
+// summaries, JSON (with schema_version), SARIF v2.1.0 for GitHub Code
+// Scanning, and the .tasia/ hardening pack. The [Decide] function
+// computes the PASS/BLOCKED/ERROR verdict from findings and the fail-on
+// threshold.
 package report
 
 import (
@@ -77,6 +82,47 @@ func PrintSummary(findings []rules.Finding, decision, risk string) {
 	}
 }
 
+// PrintVerboseSummary prints the terminal view with full why/fix/evidence
+// details under each finding, for debugging and remediation planning.
+func PrintVerboseSummary(findings []rules.Finding, decision, risk string) {
+	fmt.Println("TASIA")
+	fmt.Printf("Decision: %s\n", decision)
+	fmt.Printf("Risk: %s\n", risk)
+
+	bySev := groupBySev(findings)
+	for _, sev := range severityOrder {
+		list := bySev[sev]
+		if len(list) == 0 {
+			continue
+		}
+		fmt.Printf("\n── %s ──\n", strings.ToUpper(string(sev)))
+		for _, f := range list {
+			loc := ""
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+			} else {
+				loc = f.File
+			}
+			fmt.Printf("\n  [%s] %s %s\n", f.Severity, loc, f.Title)
+			if f.Evidence != "" {
+				fmt.Printf("    Evidence: %s\n", f.Evidence)
+			}
+			if f.Why != "" {
+				fmt.Printf("    Why:      %s\n", f.Why)
+			}
+			if f.Fix != "" {
+				fmt.Printf("    Fix:      %s\n", f.Fix)
+			}
+		}
+	}
+
+	if decision == "BLOCKED" {
+		fmt.Printf("\n%d finding(s) require attention before shipping this private AI stack.\n", len(findings))
+	} else {
+		fmt.Println("\nNo blocking findings.")
+	}
+}
+
 // PrintErrorVerdict renders the fail-closed verdict when a config file could
 // not be parsed. The gate reports ERROR rather than vouching for a stack it
 // could not fully read.
@@ -98,11 +144,12 @@ func ErrorJSON(errs []collect.ConfigError) string {
 		Error string `json:"error"`
 	}
 	out := struct {
-		Decision    string          `json:"decision"`
-		Risk        string          `json:"risk"`
-		ParseErrors []parseError    `json:"parse_errors"`
-		Findings    []rules.Finding `json:"findings"`
-	}{Decision: "ERROR", Risk: "UNKNOWN", Findings: []rules.Finding{}}
+		SchemaVersion string          `json:"schema_version"`
+		Decision      string          `json:"decision"`
+		Risk          string          `json:"risk"`
+		ParseErrors   []parseError    `json:"parse_errors"`
+		Findings      []rules.Finding `json:"findings"`
+	}{SchemaVersion: SchemaVersion, Decision: "ERROR", Risk: "UNKNOWN", Findings: []rules.Finding{}}
 	for _, e := range errs {
 		out.ParseErrors = append(out.ParseErrors, parseError{Path: e.Path, Error: e.Err})
 	}
@@ -110,16 +157,240 @@ func ErrorJSON(errs []collect.ConfigError) string {
 	return string(b)
 }
 
-// FindingsToJSON for --format json
-func FindingsToJSON(findings []rules.Finding, decision, risk string) (string, error) {
-	type out struct {
-		Decision string          `json:"decision"`
-		Risk     string          `json:"risk"`
-		Findings []rules.Finding `json:"findings"`
+// ScanSummary holds aggregate statistics about a scan run. It is included in
+// the JSON output for dashboards and trend tracking.
+type ScanSummary struct {
+	TotalFindings  int            `json:"total_findings"`
+	BySeverity     map[string]int `json:"by_severity"`
+	ByCategory     map[string]int `json:"by_category"`
+	FilesScanned   int            `json:"files_scanned"`
+	DurationMs     int64          `json:"duration_ms"`
+}
+
+// BuildSummary computes aggregate statistics from findings and scan metadata.
+func BuildSummary(findings []rules.Finding, filesScanned int, durationMs int64) ScanSummary {
+	bySev := map[string]int{
+		"CRITICAL": 0,
+		"HIGH":     0,
+		"MEDIUM":   0,
+		"LOW":      0,
 	}
-	o := out{Decision: decision, Risk: risk, Findings: findings}
+	byCat := map[string]int{}
+
+	catalog := rules.CatalogMap()
+	for _, f := range findings {
+		bySev[string(f.Severity)]++
+		cat := "other"
+		if info, ok := catalog[f.ID]; ok {
+			cat = info.Category
+		}
+		byCat[cat]++
+	}
+
+	return ScanSummary{
+		TotalFindings: len(findings),
+		BySeverity:    bySev,
+		ByCategory:    byCat,
+		FilesScanned:  filesScanned,
+		DurationMs:    durationMs,
+	}
+}
+
+type enrichedFinding struct {
+	ID          string         `json:"id"`
+	Severity    rules.Severity `json:"severity"`
+	Title       string         `json:"title"`
+	File        string         `json:"file"`
+	Line        int            `json:"line"`
+	Evidence    string         `json:"evidence"`
+	Why         string         `json:"why"`
+	Fix         string         `json:"fix"`
+	Remediation *remediation   `json:"remediation,omitempty"`
+}
+
+type remediation struct {
+	Summary  string   `json:"summary"`
+	Category string   `json:"category"`
+	DocURL   string   `json:"doc_url"`
+	Refs     []string `json:"refs,omitempty"`
+}
+
+var remediationRefs = map[string][]string{
+	"compose":    {"CIS Docker Benchmark 5.x", "OWASP Docker Top 10"},
+	"agent":      {"OWASP LLM Top 10 LLM04", "CIS Docker Benchmark 5.x"},
+	"dockerfile": {"CIS Docker Benchmark 4.1", "Dockerfile best practices"},
+	"proxy":      {"OWASP API Security Top 10 API2"},
+	"kubernetes": {"CIS Kubernetes Benchmark 5.2", "NSA Kubernetes Hardening Guide"},
+	"helm":       {"CIS Kubernetes Benchmark 5.2"},
+	"terraform":  {"CIS AWS/GCP/Azure Foundations Benchmark"},
+	"manifest":   {},
+}
+
+func enrichFindings(findings []rules.Finding) []enrichedFinding {
+	catalog := rules.CatalogMap()
+	out := make([]enrichedFinding, len(findings))
+	for i, f := range findings {
+		out[i] = enrichedFinding{
+			ID: f.ID, Severity: f.Severity, Title: f.Title,
+			File: f.File, Line: f.Line, Evidence: f.Evidence,
+			Why: f.Why, Fix: f.Fix,
+		}
+		info, ok := catalog[f.ID]
+		if !ok {
+			continue
+		}
+		r := &remediation{
+			Summary:  f.Fix,
+			Category: info.Category,
+			DocURL:   "https://github.com/joeyvictorino/tasia/blob/main/docs/rules.md#" + f.ID,
+		}
+		if refs, ok := remediationRefs[info.Category]; ok && len(refs) > 0 {
+			r.Refs = refs
+		}
+		out[i].Remediation = r
+	}
+	return out
+}
+
+// FindingsToJSON for --format json
+func FindingsToJSON(findings []rules.Finding, decision, risk string, summary *ScanSummary) (string, error) {
+	type out struct {
+		SchemaVersion string             `json:"schema_version"`
+		Decision      string             `json:"decision"`
+		Risk          string             `json:"risk"`
+		Summary       *ScanSummary       `json:"summary,omitempty"`
+		Findings      []enrichedFinding  `json:"findings"`
+	}
+	o := out{SchemaVersion: SchemaVersion, Decision: decision, Risk: risk, Summary: summary, Findings: enrichFindings(findings)}
 	b, err := json.MarshalIndent(o, "", "  ")
 	return string(b), err
+}
+
+// FindingsToSARIF produces a SARIF v2.1.0 JSON log suitable for upload to
+// GitHub Code Scanning (via github/codeql-action/upload-sarif).
+func FindingsToSARIF(findings []rules.Finding, version string) (string, error) {
+	type sarifMessage struct {
+		Text string `json:"text"`
+	}
+	type sarifArtifactLocation struct {
+		URI string `json:"uri"`
+	}
+	type sarifRegion struct {
+		StartLine int `json:"startLine,omitempty"`
+	}
+	type sarifPhysicalLocation struct {
+		ArtifactLocation sarifArtifactLocation `json:"artifactLocation"`
+		Region           *sarifRegion          `json:"region,omitempty"`
+	}
+	type sarifLocation struct {
+		PhysicalLocation sarifPhysicalLocation `json:"physicalLocation"`
+	}
+	type sarifResult struct {
+		RuleID    string          `json:"ruleId"`
+		Level     string          `json:"level"`
+		Message   sarifMessage    `json:"message"`
+		Locations []sarifLocation `json:"locations"`
+	}
+	type sarifHelp struct {
+		Text string `json:"text"`
+	}
+	type sarifShortDesc struct {
+		Text string `json:"text"`
+	}
+	type sarifRule struct {
+		ID               string         `json:"id"`
+		ShortDescription sarifShortDesc `json:"shortDescription"`
+		HelpURI          string         `json:"helpUri"`
+		Help             sarifHelp      `json:"help"`
+	}
+	type sarifDriver struct {
+		Name           string      `json:"name"`
+		Version        string      `json:"version"`
+		InformationURI string      `json:"informationUri"`
+		Rules          []sarifRule `json:"rules"`
+	}
+	type sarifTool struct {
+		Driver sarifDriver `json:"driver"`
+	}
+	type sarifRun struct {
+		Tool    sarifTool     `json:"tool"`
+		Results []sarifResult `json:"results"`
+	}
+	type sarifLog struct {
+		Schema  string     `json:"$schema"`
+		Version string     `json:"version"`
+		Runs    []sarifRun `json:"runs"`
+	}
+
+	ruleSet := map[string]bool{}
+	var ruleList []sarifRule
+	var results []sarifResult
+
+	for _, f := range findings {
+		if !ruleSet[f.ID] {
+			ruleSet[f.ID] = true
+			ruleList = append(ruleList, sarifRule{
+				ID:               f.ID,
+				ShortDescription: sarifShortDesc{Text: f.Title},
+				HelpURI:          "https://github.com/joeyvictorino/tasia/blob/main/docs/rules.md#" + f.ID,
+				Help:             sarifHelp{Text: f.Why + "\n\nFix: " + f.Fix},
+			})
+		}
+
+		loc := sarifLocation{
+			PhysicalLocation: sarifPhysicalLocation{
+				ArtifactLocation: sarifArtifactLocation{URI: f.File},
+			},
+		}
+		if f.Line > 0 {
+			loc.PhysicalLocation.Region = &sarifRegion{StartLine: f.Line}
+		}
+
+		results = append(results, sarifResult{
+			RuleID:    f.ID,
+			Level:     severityToSARIF(f.Severity),
+			Message:   sarifMessage{Text: f.Evidence},
+			Locations: []sarifLocation{loc},
+		})
+	}
+
+	if version == "" {
+		version = "dev"
+	}
+
+	log := sarifLog{
+		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+		Version: "2.1.0",
+		Runs: []sarifRun{{
+			Tool: sarifTool{
+				Driver: sarifDriver{
+					Name:           "tasia",
+					Version:        version,
+					InformationURI: "https://github.com/joeyvictorino/tasia",
+					Rules:          ruleList,
+				},
+			},
+			Results: results,
+		}},
+	}
+
+	b, err := json.MarshalIndent(log, "", "  ")
+	return string(b), err
+}
+
+func severityToSARIF(s rules.Severity) string {
+	switch s {
+	case rules.SeverityCritical:
+		return "error"
+	case rules.SeverityHigh:
+		return "error"
+	case rules.SeverityMedium:
+		return "warning"
+	case rules.SeverityLow:
+		return "note"
+	default:
+		return "note"
+	}
 }
 
 // WriteArtifacts creates the full .tasia/ pack.
@@ -255,6 +526,7 @@ func buildManifest(c *collect.Collected, findings []rules.Finding, decision, ris
 		"runtimes":               c.DetectedRuntimes,
 		"interfaces":             c.DetectedInterfaces,
 		"retrieval_databases":    c.DetectedRetrieval,
+		"agent_runtimes":         c.DetectedAgentRuntimes,
 		"published_ports":        ports,
 		"secret_key_names_found": secrets,
 		"risk":                   risk,
@@ -342,6 +614,42 @@ func buildFindingsToon(findings []rules.Finding) string {
 		b.WriteString(fmt.Sprintf("    fix: %s\n", strings.ReplaceAll(f.Fix, "\n", " ")))
 	}
 	return b.String()
+}
+
+// ExitSummaryLine returns a one-line human-readable summary of findings by
+// severity and the exit-code reason, suitable for printing to stderr.
+func ExitSummaryLine(findings []rules.Finding, exitCode int) string {
+	counts := map[rules.Severity]int{}
+	for _, f := range findings {
+		counts[f.Severity]++
+	}
+
+	var parts []string
+	for _, sev := range severityOrder {
+		if n := counts[sev]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, strings.ToLower(string(sev))))
+		}
+	}
+
+	total := len(findings)
+	breakdown := ""
+	if len(parts) > 0 {
+		breakdown = " (" + strings.Join(parts, ", ") + ")"
+	}
+
+	var reason string
+	switch exitCode {
+	case 0:
+		reason = "pass"
+	case 1:
+		reason = "findings above threshold"
+	case 2:
+		reason = "error"
+	default:
+		reason = "unknown"
+	}
+
+	return fmt.Sprintf("Found %d issue(s)%s. Exit code: %d (%s)", total, breakdown, exitCode, reason)
 }
 
 func groupBySev(fs []rules.Finding) map[rules.Severity][]rules.Finding {

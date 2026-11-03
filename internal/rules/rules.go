@@ -1,8 +1,13 @@
+// Package rules implements tasia's deterministic security rules. Each rule
+// inspects collected configuration data and returns zero or more [Finding]
+// values with stable IDs, severity, file:line location and remediation
+// guidance. The [Evaluate] function runs every rule; [Catalog] lists them.
 package rules
 
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -61,9 +66,16 @@ func Evaluate(c *collect.Collected) []Finding {
 			findings = append(findings, evaluateService(relPath, svc, stackHasAI)...)
 		}
 		findings = append(findings, networkSeparationFinding(cf, relPath)...)
+		findings = append(findings, agentSharedSecretFindings(cf, relPath)...)
 	}
 
 	findings = append(findings, envFileFindings(c.EnvFiles)...)
+	findings = append(findings, dockerfileFindings(c.Dockerfiles)...)
+	findings = append(findings, reverseProxyFindings(c.ReverseProxyConfigs)...)
+	findings = append(findings, kubeFindings(c.KubeManifests)...)
+	findings = append(findings, kubeNetworkPolicyFinding(c)...)
+	findings = append(findings, helmFindings(c.HelmValues)...)
+	findings = append(findings, terraformFindings(c.TerraformFiles)...)
 	findings = append(findings, missingManifestFinding(c)...)
 
 	return dedupeFindings(findings)
@@ -92,10 +104,17 @@ func evaluateService(relCompose string, svc compose.Service, stackHasAI bool) []
 	appendIf(hostNetworkFinding(svc, relCompose, stackHasAI))
 	out = append(out, exposedPortFindings(svc, relCompose, stackHasAI)...)
 	appendIf(privilegedFinding(svc, relCompose))
+	out = append(out, dangerousCapFindings(svc, relCompose)...)
+	appendIf(noSeccompFinding(svc, relCompose))
 	appendIf(latestImageFinding(svc, relCompose))
-	out = append(out, dockerSocketFindings(svc, relCompose)...)
-	out = append(out, broadBindMountFindings(svc, relCompose)...)
+	isAgent := classifyService(svc.Image, 0) == catAgent
+	out = append(out, dockerSocketFindings(svc, relCompose, isAgent)...)
+	out = append(out, broadBindMountFindings(svc, relCompose, isAgent)...)
 	out = append(out, environmentFindings(svc, relCompose)...)
+	out = append(out, agentAutoApproveFindings(svc, relCompose)...)
+	appendIf(agentAutoRestartFinding(svc, relCompose))
+	out = append(out, agentTestMountFindings(svc, relCompose)...)
+	appendIf(vectorDBNoAuthFinding(svc, relCompose))
 
 	return out
 }
@@ -125,7 +144,16 @@ var exposureTemplates = map[svcCategory]exposureTemplate{
 		why:   "Vector database contains embeddings that may encode sensitive retrieved data.",
 		fix:   "Do not publish vector DB ports to host. Access only via internal Docker network from trusted services.",
 	},
+	catAgent: {
+		id:    "exposed_agent_runtime",
+		title: "Agent runtime published to all interfaces",
+		why:   agentExposureWhy,
+		fix:   "Bind to 127.0.0.1 or put the runtime behind an authenticating proxy, and keep it on an internal Docker network. Grant it only the credentials and tools its workflows need.",
+	},
 }
+
+// agentExposureWhy is shared by the port and host-network forms of the rule.
+const agentExposureWhy = "An agent runtime executes tools and model-written code with whatever credentials it holds. Publishing it beyond localhost hands remote parties a code-execution surface, not just a chat window."
 
 // exposedPortFindings flags every host-published port that belongs to a
 // recognized AI or data-store service.
@@ -195,6 +223,53 @@ func privilegedFinding(svc compose.Service, relCompose string) (Finding, bool) {
 	}, true
 }
 
+var dangerousCaps = map[string]struct{}{
+	"SYS_ADMIN":  {},
+	"NET_ADMIN":  {},
+	"NET_RAW":    {},
+	"SYS_PTRACE": {},
+	"DAC_OVERRIDE": {},
+	"SYS_MODULE": {},
+	"SYS_RAWIO":  {},
+}
+
+func dangerousCapFindings(svc compose.Service, relCompose string) []Finding {
+	var out []Finding
+	for _, cap := range svc.CapAdd {
+		if _, dangerous := dangerousCaps[cap]; dangerous {
+			out = append(out, Finding{
+				ID:       "dangerous_capability",
+				Severity: SeverityHigh,
+				Title:    "Dangerous Linux capability granted",
+				File:     relCompose,
+				Line:     svc.CapAddLine,
+				Evidence: fmt.Sprintf("service=%s cap_add=%s", svc.Name, cap),
+				Why:      fmt.Sprintf("%s grants elevated host access that can be used to escape the container.", cap),
+				Fix:      fmt.Sprintf("Remove %s from cap_add unless absolutely required. Use the minimum set of capabilities.", cap),
+			})
+		}
+	}
+	return out
+}
+
+func noSeccompFinding(svc compose.Service, relCompose string) (Finding, bool) {
+	for _, opt := range svc.SecurityOpt {
+		if strings.Contains(opt, "seccomp:unconfined") || strings.Contains(opt, "seccomp=unconfined") {
+			return Finding{
+				ID:       "seccomp_disabled",
+				Severity: SeverityHigh,
+				Title:    "Seccomp profile disabled",
+				File:     relCompose,
+				Line:     svc.SecurityOptLine,
+				Evidence: fmt.Sprintf("service=%s security_opt=%s", svc.Name, opt),
+				Why:      "Disabling seccomp removes syscall filtering, allowing the container to make any kernel call.",
+				Fix:      "Remove seccomp:unconfined. Use the default seccomp profile or a custom restricted profile.",
+			}, true
+		}
+	}
+	return Finding{}, false
+}
+
 func latestImageFinding(svc compose.Service, relCompose string) (Finding, bool) {
 	if !strings.HasSuffix(svc.Image, ":latest") && !untagged(svc.Image) {
 		return Finding{}, false
@@ -211,7 +286,11 @@ func latestImageFinding(svc compose.Service, relCompose string) (Finding, bool) 
 	}, true
 }
 
-func dockerSocketFindings(svc compose.Service, relCompose string) []Finding {
+func dockerSocketFindings(svc compose.Service, relCompose string, isAgent bool) []Finding {
+	why := "Mounting the Docker socket gives the container full control of the Docker daemon on the host."
+	if isAgent {
+		why += " In an agent runtime that control is reachable by model-written code."
+	}
 	var out []Finding
 	for _, v := range svc.Volumes {
 		if strings.Contains(v, "/var/run/docker.sock") {
@@ -222,7 +301,7 @@ func dockerSocketFindings(svc compose.Service, relCompose string) []Finding {
 				File:     relCompose,
 				Line:     svc.VolumesLine,
 				Evidence: v,
-				Why:      "Mounting the Docker socket gives the container full control of the Docker daemon on the host.",
+				Why:      why,
 				Fix:      "Remove docker.sock mount. Use rootless Docker or dedicated build service instead.",
 			})
 		}
@@ -230,21 +309,202 @@ func dockerSocketFindings(svc compose.Service, relCompose string) []Finding {
 	return out
 }
 
-func broadBindMountFindings(svc compose.Service, relCompose string) []Finding {
+// broadBindMountFindings flags writable, broad host bind mounts. On an agent
+// runtime the finding is HIGH: a writable mount of the project lets the agent
+// change the tests, scripts or expected outputs that judge its own work, so a
+// later "all checks pass" proves nothing.
+func broadBindMountFindings(svc compose.Service, relCompose string, isAgent bool) []Finding {
 	var out []Finding
 	for _, v := range svc.Volumes {
 		broad := strings.HasPrefix(v, ".:") || strings.HasPrefix(v, "./:") || strings.Contains(v, ":/app")
-		if broad && !isReadOnlyMount(v) {
-			out = append(out, Finding{
-				ID:       "broad_bind_mount",
-				Severity: SeverityMedium,
-				Title:    "broad bind mount",
-				File:     relCompose,
-				Line:     svc.VolumesLine,
-				Evidence: v,
-				Why:      "Broad host-to-container bind mounts can expose source, secrets, or allow escape.",
-				Fix:      "Use more specific mounts or named volumes; prefer read-only where possible.",
-			})
+		if !broad || isReadOnlyMount(v) {
+			continue
+		}
+		f := Finding{
+			ID:       "broad_bind_mount",
+			Severity: SeverityMedium,
+			Title:    "broad bind mount",
+			File:     relCompose,
+			Line:     svc.VolumesLine,
+			Evidence: v,
+			Why:      "Broad host-to-container bind mounts can expose source, secrets, or allow escape.",
+			Fix:      "Use more specific mounts or named volumes; prefer read-only where possible.",
+		}
+		if isAgent {
+			f.Severity = SeverityHigh
+			f.Title = "agent runtime has a broad writable bind mount"
+			f.Why = "A writable mount of the project lets the agent runtime edit the tests, check scripts and expected outputs that judge its own work, so a passing check no longer proves anything. It also exposes source and secrets to model-written code."
+			f.Fix = "Mount inputs read-only (:ro) and give the agent a separate, narrow writable workspace. Keep test data and check scripts outside anything the agent can write."
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// agentAutoApproveKey maps environment variable key names (upper-cased) to a
+// human-readable description of the danger. Each key is a setting that, when
+// enabled, lets an agent runtime execute code or approve its own actions
+// without human oversight. Only the key name is emitted — values are never
+// stored in findings.
+var agentAutoApproveKeys = map[string]string{
+	"N8N_ALLOW_EXEC":              "n8n code-execution node is enabled",
+	"FLOWISE_ALLOW_CODE_EXEC":     "Flowise code execution is enabled",
+	"SANDBOX_ENABLED":             "sandbox toggle (may disable sandboxing when false)",
+	"AUTO_APPROVE":                "agent auto-approve is enabled",
+	"AUTO_APPROVE_TOOLS":          "agent tool auto-approval is enabled",
+	"OPENHANDS_AUTO_APPROVE":      "OpenHands auto-approve is enabled",
+	"INTERPRETER_AUTO_APPROVE":    "Open Interpreter auto-approve is enabled",
+	"ALLOW_ARBITRARY_CODE":        "arbitrary code execution is allowed",
+	"ENABLE_CODE_EXECUTION":       "code execution is explicitly enabled",
+	"LANGFLOW_AUTO_LOGIN":         "Langflow auto-login bypasses authentication",
+	"N8N_BASIC_AUTH_ACTIVE":       "n8n basic auth toggle (dangerous when false)",
+	"DIFY_SANDBOX_ENABLE":         "Dify sandbox toggle (dangerous when false)",
+}
+
+// agentAutoApproveFindings flags agent-runtime services that set dangerous
+// auto-approve or auto-execute environment variables. Only agent runtimes are
+// checked — these settings on other services are not flagged.
+func agentAutoApproveFindings(svc compose.Service, relCompose string) []Finding {
+	if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+		return nil
+	}
+	var out []Finding
+	for _, entry := range svc.Environment {
+		key, _, _ := strings.Cut(entry, "=")
+		key = strings.TrimSpace(key)
+		upper := strings.ToUpper(key)
+		desc, flagged := agentAutoApproveKeys[upper]
+		if !flagged {
+			continue
+		}
+		out = append(out, Finding{
+			ID:       "agent_auto_approve",
+			Severity: SeverityHigh,
+			Title:    fmt.Sprintf("agent runtime sets %s", key),
+			File:     relCompose,
+			Line:     svc.EnvLine,
+			Evidence: fmt.Sprintf("service=%s key=%s (%s)", svc.Name, key, desc),
+			Why:      "Auto-approve and code-execution settings on an agent runtime let model-written code run without human review. A compromised or confused model can then take destructive actions with whatever credentials the runtime holds.",
+			Fix:      "Remove the setting or set it to the safe default. Require human approval for tool execution and code runs.",
+		})
+	}
+	return out
+}
+
+// agentAutoRestartFinding flags agent runtimes with restart: always or
+// unless-stopped. An agent that automatically restarts after a crash can retry
+// destructive actions in a loop without human intervention.
+func agentAutoRestartFinding(svc compose.Service, relCompose string) (Finding, bool) {
+	if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+		return Finding{}, false
+	}
+	r := strings.ToLower(svc.Restart)
+	if r != "always" && r != "unless-stopped" {
+		return Finding{}, false
+	}
+	return Finding{
+		ID:       "agent_auto_restart",
+		Severity: SeverityMedium,
+		Title:    fmt.Sprintf("agent runtime has restart: %s", svc.Restart),
+		File:     relCompose,
+		Line:     svc.RestartLine,
+		Evidence: fmt.Sprintf("service=%s restart=%s", svc.Name, svc.Restart),
+		Why:      "An agent runtime that restarts automatically after a crash can retry destructive model-written actions in a loop without human intervention.",
+		Fix:      "Use restart: on-failure with a max retry count, or restart: no, and monitor the service externally.",
+	}, true
+}
+
+// vectorDBAuthKeys maps image-keyword substrings to the environment variable
+// key names (upper-cased) that indicate authentication is configured.
+var vectorDBAuthKeys = map[string][]string{
+	"chroma": {
+		"CHROMA_SERVER_AUTHN_CREDENTIALS",
+		"CHROMA_SERVER_AUTHN_PROVIDER",
+		"CHROMA_SERVER_AUTH_CREDENTIALS",
+	},
+	"weaviate": {
+		"AUTHENTICATION_APIKEY_ENABLED",
+		"AUTHENTICATION_OIDC_ENABLED",
+		"AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED",
+	},
+}
+
+// vectorDBNoAuthFinding flags Chroma or Weaviate services that have no
+// authentication-related environment variable set. These databases default to
+// no authentication, so anyone on the network can read and write embeddings.
+func vectorDBNoAuthFinding(svc compose.Service, relCompose string) (Finding, bool) {
+	img := strings.ToLower(svc.Image)
+	for keyword, authKeys := range vectorDBAuthKeys {
+		if !strings.Contains(img, keyword) {
+			continue
+		}
+		for _, env := range svc.Environment {
+			key, _, _ := strings.Cut(env, "=")
+			upper := strings.ToUpper(strings.TrimSpace(key))
+			for _, ak := range authKeys {
+				if upper == ak {
+					return Finding{}, false
+				}
+			}
+		}
+		return Finding{
+			ID:       "vector_db_no_auth",
+			Severity: SeverityLow,
+			Title:    fmt.Sprintf("%s has no authentication configuration", keyword),
+			File:     relCompose,
+			Line:     svc.EnvLine,
+			Evidence: fmt.Sprintf("service=%s image=%s", svc.Name, svc.Image),
+			Why:      fmt.Sprintf("%s defaults to no authentication. Anyone on the Docker network (or the host, if ports are published) can read and write the embeddings store.", strings.ToUpper(keyword[:1])+keyword[1:]),
+			Fix:      "Set authentication environment variables or use an authenticating proxy in front of the database.",
+		}, true
+	}
+	return Finding{}, false
+}
+
+// testDirPrefixes are path prefixes that indicate test or fixture directories.
+var testDirPrefixes = []string{
+	"test/", "tests/", "test\\", "tests\\",
+	"spec/", "spec\\",
+	"fixtures/", "fixtures\\",
+	"__tests__/", "__tests__\\",
+	"testdata/", "testdata\\",
+	"e2e/", "e2e\\",
+	"./test/", "./tests/", "./spec/", "./fixtures/", "./__tests__/", "./testdata/", "./e2e/",
+}
+
+// agentTestMountFindings flags agent runtimes that have test or fixture
+// directories bind-mounted writable. An agent that can rewrite the tests that
+// judge its own output makes "all tests pass" meaningless.
+func agentTestMountFindings(svc compose.Service, relCompose string) []Finding {
+	if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+		return nil
+	}
+	var out []Finding
+	for _, v := range svc.Volumes {
+		if isReadOnlyMount(v) {
+			continue
+		}
+		hostPath := strings.ToLower(v)
+		if i := strings.Index(hostPath, ":"); i >= 0 {
+			hostPath = hostPath[:i]
+		}
+		if !strings.HasSuffix(hostPath, "/") {
+			hostPath += "/"
+		}
+		for _, prefix := range testDirPrefixes {
+			if strings.Contains(hostPath, prefix) {
+				out = append(out, Finding{
+					ID:       "agent_test_mount",
+					Severity: SeverityHigh,
+					Title:    "agent runtime has writable test/fixture mount",
+					File:     relCompose,
+					Line:     svc.VolumesLine,
+					Evidence: fmt.Sprintf("service=%s volume=%s", svc.Name, v),
+					Why:      "A writable mount of test or fixture directories into an agent runtime lets the agent rewrite the tests and expected outputs that judge its own work. A passing suite then proves nothing.",
+					Fix:      "Mount test directories read-only (:ro) or keep them outside anything the agent can write.",
+				})
+				break
+			}
 		}
 	}
 	return out
@@ -269,6 +529,18 @@ func environmentFindings(svc compose.Service, relCompose string) []Finding {
 				Evidence: key,
 				Why:      "Token/secret key names in compose environment may indicate credentials. Values are not inspected or emitted.",
 				Fix:      "Inject real secrets at deploy time (e.g. secrets, sops, platform env); commit only placeholders.",
+			})
+		}
+		if pat := collect.LooksLikeSecretValue(value); pat != "" {
+			out = append(out, Finding{
+				ID:       "env_hardcoded_secret",
+				Severity: SeverityHigh,
+				Title:    fmt.Sprintf("compose env value for %s looks like a real secret", key),
+				File:     relCompose,
+				Line:     svc.EnvLine,
+				Evidence: fmt.Sprintf("%s: value matches %s", key, pat),
+				Why:      "The value matches a known secret pattern. Committing real credentials is a security risk even in compose files.",
+				Fix:      "Remove the real secret; use Docker secrets or environment injection at deploy time. Rotate the exposed credential.",
 			})
 		}
 		if isCORSKey(key) && isPermissiveOrigin(value) {
@@ -301,15 +573,145 @@ func envFileFindings(envFiles []collect.EnvFile) []Finding {
 	var out []Finding
 	for _, ef := range envFiles {
 		for _, key := range ef.Keys {
+			isSecretName := collect.LooksLikeSecretKeyName(key.Name)
+			if isSecretName {
+				out = append(out, Finding{
+					ID:       "env_token_key",
+					Severity: SeverityMedium,
+					Title:    fmt.Sprintf(".env contains token key name: %s", key.Name),
+					File:     ef.Path,
+					Line:     key.Line,
+					Evidence: key.Name,
+					Why:      "Token or secret key names in env files indicate credentials may be present. Never commit real secrets; use .env.example.",
+					Fix:      "Move real secrets out of repo; add .env to .gitignore; provide .env.example with placeholders only.",
+				})
+			}
+			if key.ValuePattern != "" && !isSecretName {
+				out = append(out, Finding{
+					ID:       "env_hardcoded_secret",
+					Severity: SeverityHigh,
+					Title:    fmt.Sprintf(".env value for %s looks like a real secret", key.Name),
+					File:     ef.Path,
+					Line:     key.Line,
+					Evidence: fmt.Sprintf("%s: value matches %s", key.Name, key.ValuePattern),
+					Why:      "The value matches a known secret pattern. Committing real credentials to a repository is a security risk even if the repo is private.",
+					Fix:      "Remove the real secret and inject it at deploy time (e.g. secrets manager, platform env). Rotate the exposed credential.",
+				})
+			}
+		}
+	}
+	return out
+}
+
+// dockerfileFindings inspects collected Dockerfiles for USER root and EXPOSE
+// directives. A final USER root weakens container isolation; EXPOSE documents
+// intended ports but is informational. Sensitive ports (databases, SSH, Docker
+// daemon) get a separate finding.
+func dockerfileFindings(dockerfiles []collect.Dockerfile) []Finding {
+	var out []Finding
+	for _, df := range dockerfiles {
+		if df.User == "" && df.Content != "" && df.UserLine == 0 && len(df.Exposes) == 0 {
+			df = collect.ParseDockerfile(df.Path, df.Content)
+		}
+		if isRootUser(df.User) {
 			out = append(out, Finding{
-				ID:       "env_token_key",
+				ID:       "dockerfile_user_root",
+				Severity: SeverityHigh,
+				Title:    "Dockerfile runs as root",
+				File:     df.Path,
+				Line:     df.UserLine,
+				Evidence: fmt.Sprintf("USER %s", df.User),
+				Why:      "Running as root inside the container weakens isolation. A container escape or application vulnerability gives the attacker root on the host kernel namespace.",
+				Fix:      "Add a non-root USER directive at the end of the Dockerfile (e.g. USER appuser) and adjust file ownership.",
+			})
+		} else if df.User == "" && df.Content != "" {
+			out = append(out, Finding{
+				ID:       "dockerfile_user_root",
 				Severity: SeverityMedium,
-				Title:    fmt.Sprintf(".env contains token key name: %s", key.Name),
-				File:     ef.Path,
-				Line:     key.Line,
-				Evidence: key.Name,
-				Why:      "Token or secret key names in env files indicate credentials may be present. Never commit real secrets; use .env.example.",
-				Fix:      "Move real secrets out of repo; add .env to .gitignore; provide .env.example with placeholders only.",
+				Title:    "Dockerfile has no USER directive (defaults to root)",
+				File:     df.Path,
+				Line:     0,
+				Evidence: "no USER directive",
+				Why:      "Without a USER directive the container process runs as root by default. A container escape then gives full host privileges.",
+				Fix:      "Add USER <non-root-uid> near the end of the Dockerfile.",
+			})
+		}
+		for _, exp := range df.Exposes {
+			if hasSensitivePort(exp.Ports) {
+				out = append(out, Finding{
+					ID:       "dockerfile_expose_sensitive",
+					Severity: SeverityMedium,
+					Title:    fmt.Sprintf("Dockerfile exposes sensitive port: %s", exp.Ports),
+					File:     df.Path,
+					Line:     exp.Line,
+					Evidence: fmt.Sprintf("EXPOSE %s", exp.Ports),
+					Why:      "EXPOSE documents the container's intended ports. Sensitive service ports (databases, SSH, Docker daemon) should stay on internal networks.",
+					Fix:      "Remove the EXPOSE for internal-only ports; use Docker networks to restrict access.",
+				})
+			} else {
+				out = append(out, Finding{
+					ID:       "dockerfile_expose",
+					Severity: SeverityLow,
+					Title:    fmt.Sprintf("Dockerfile EXPOSE %s", exp.Ports),
+					File:     df.Path,
+					Line:     exp.Line,
+					Evidence: fmt.Sprintf("EXPOSE %s", exp.Ports),
+					Why:      "EXPOSE documents the container's intended ports. It does not publish them, but signals which ports the image expects to be reachable and may be automatically published by orchestrators.",
+					Fix:      "Verify that exposed ports are intentional and bind to 127.0.0.1 when publishing.",
+				})
+			}
+		}
+	}
+	return out
+}
+
+func isRootUser(user string) bool {
+	return strings.EqualFold(user, "root") || user == "0"
+}
+
+var sensitiveDockerfilePorts = map[int]bool{
+	22: true, 2375: true, 2376: true, 5432: true, 3306: true,
+	6379: true, 27017: true, 9200: true, 9300: true, 2049: true,
+}
+
+func hasSensitivePort(ports string) bool {
+	for _, token := range strings.Fields(ports) {
+		p := strings.Split(token, "/")[0]
+		if n, err := strconv.Atoi(p); err == nil && sensitiveDockerfilePorts[n] {
+			return true
+		}
+	}
+	return false
+}
+
+// reverseProxyFindings flags reverse proxy directives that forward to upstream
+// services without authentication. A Caddyfile reverse_proxy or nginx
+// proxy_pass without basic_auth / forward_auth / auth_request lets anyone who
+// reaches the proxy reach the upstream AI service.
+func reverseProxyFindings(configs []collect.ReverseProxyConfig) []Finding {
+	var out []Finding
+	for _, cfg := range configs {
+		for _, proxy := range cfg.Proxies {
+			if proxy.HasAuth {
+				continue
+			}
+			var kind, directive string
+			if cfg.Kind == "caddyfile" {
+				kind = "Caddyfile"
+				directive = "reverse_proxy"
+			} else {
+				kind = "nginx"
+				directive = "proxy_pass"
+			}
+			out = append(out, Finding{
+				ID:       "reverse_proxy_no_auth",
+				Severity: SeverityMedium,
+				Title:    fmt.Sprintf("%s proxies to %s without authentication", kind, proxy.Upstream),
+				File:     cfg.Path,
+				Line:     proxy.Line,
+				Evidence: fmt.Sprintf("%s %s", directive, proxy.Upstream),
+				Why:      "A reverse proxy without authentication exposes the upstream service to anyone who can reach the proxy. If the upstream is an inference API, chat UI, or agent runtime, this is an open door.",
+				Fix:      fmt.Sprintf("Add authentication to the %s block: basic_auth/forward_auth (Caddy) or auth_basic/auth_request (nginx).", directive),
 			})
 		}
 	}
@@ -367,6 +769,7 @@ const (
 	catUI
 	catVector
 	catDatastore
+	catAgent // agent runtimes and workflow engines that execute tools or code
 )
 
 // imageKeywords maps a category to the image-name substrings that identify it.
@@ -378,7 +781,8 @@ var imageKeywords = map[svcCategory][]string{
 }
 
 // portCategory maps a well-known host port to its service category, so bare or
-// unknown images are still classified (e.g. LM Studio on 1234, Milvus on 19530).
+// unknown images are still classified (e.g. LM Studio on 1234, Milvus on 19530,
+// n8n on 5678).
 var portCategory = map[int]svcCategory{
 	11434: catInference,
 	1234:  catInference,
@@ -387,14 +791,24 @@ var portCategory = map[int]svcCategory{
 	19530: catVector,
 	6379:  catDatastore,
 	5432:  catDatastore,
+	5678:  catAgent,
 }
 
 // classifyService categorizes a service by image name first, then falls back to
 // the published host port. Image name is checked in a fixed category order so
-// classification is deterministic.
+// classification is deterministic. Agent runtimes are matched before UIs so a
+// runtime that also serves a UI (Langflow, Flowise) is judged by the larger
+// blast radius; the agent-runtime image rules live in internal/collect so the
+// stack manifest and the rules cannot drift apart.
 func classifyService(image string, hostPort int) svcCategory {
 	img := strings.ToLower(image)
-	for _, category := range []svcCategory{catInference, catUI, catVector, catDatastore} {
+	if containsAny(img, imageKeywords[catInference]) {
+		return catInference
+	}
+	if _, ok := collect.IsAgentRuntimeImage(img); ok {
+		return catAgent
+	}
+	for _, category := range []svcCategory{catUI, catVector, catDatastore} {
 		if containsAny(img, imageKeywords[category]) {
 			return category
 		}
@@ -437,6 +851,10 @@ func hostNetworkFinding(svc compose.Service, relCompose string, stackHasAI bool)
 		base.ID, base.Severity = "exposed_vector", SeverityHigh
 		base.Title = "Vector DB on host network (all interfaces)"
 		base.Why = "network_mode: host exposes the vector database on every host interface."
+	case catAgent:
+		base.ID, base.Severity = "exposed_agent_runtime", SeverityHigh
+		base.Title = "Agent runtime on host network (all interfaces)"
+		base.Why = "network_mode: host puts the agent runtime on every host interface. " + agentExposureWhy
 	case catDatastore:
 		base.ID = "exposed_datastore"
 		base.Title = "Data store on host network (all interfaces)"
@@ -453,10 +871,12 @@ func hostNetworkFinding(svc compose.Service, relCompose string, stackHasAI bool)
 }
 
 // composeHasAIComponent reports whether a compose file contains an inference,
-// UI, or vector service — used to raise data-store exposure to HIGH.
+// UI, vector or agent-runtime service — used to raise data-store exposure to
+// HIGH, since such a store likely holds prompts, chats, embeddings or workflow
+// credentials.
 func composeHasAIComponent(cf compose.File) bool {
 	isAI := func(c svcCategory) bool {
-		return c == catInference || c == catUI || c == catVector
+		return c == catInference || c == catUI || c == catVector || c == catAgent
 	}
 	for _, svc := range cf.Services {
 		if isAI(classifyService(svc.Image, 0)) {
@@ -509,6 +929,54 @@ func networkSeparationFinding(cf compose.File, relCompose string) []Finding {
 		Why:      "Services share the default Docker bridge network and can reach each other freely; an internal network limits lateral movement.",
 		Fix:      "Define an internal network and attach AI services to it. Publish only the minimum gateway if needed.",
 	}}
+}
+
+// agentSharedSecretFindings flags compose files where two or more agent runtime
+// services share the same secret-looking environment variable key name. Shared
+// credentials mean compromise of one agent exposes all others that hold the
+// same key.
+func agentSharedSecretFindings(cf compose.File, relCompose string) []Finding {
+	type entry struct {
+		services []string
+		line     int
+	}
+	secrets := make(map[string]*entry)
+	for _, svc := range cf.Services {
+		if _, ok := collect.IsAgentRuntimeImage(svc.Image); !ok {
+			continue
+		}
+		for _, env := range svc.Environment {
+			key, _, _ := strings.Cut(env, "=")
+			key = strings.TrimSpace(key)
+			if !collect.LooksLikeSecretKeyName(key) {
+				continue
+			}
+			e, exists := secrets[key]
+			if !exists {
+				e = &entry{line: svc.EnvLine}
+				secrets[key] = e
+			}
+			e.services = append(e.services, svc.Name)
+		}
+	}
+	var out []Finding
+	for key, e := range secrets {
+		if len(e.services) < 2 {
+			continue
+		}
+		out = append(out, Finding{
+			ID:       "agent_shared_secret",
+			Severity: SeverityHigh,
+			Title:    fmt.Sprintf("secret key %s shared across %d agent runtimes", key, len(e.services)),
+			File:     relCompose,
+			Line:     e.line,
+			Evidence: fmt.Sprintf("key=%s agents=%s", key, strings.Join(e.services, ",")),
+			Why:      "Multiple agent runtimes hold the same credential key. Compromise of one agent exposes every service the shared credential can reach.",
+			Fix:      "Issue per-agent credentials with least-privilege scopes. Rotate immediately if any agent was exposed.",
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Evidence < out[j].Evidence })
+	return out
 }
 
 // dedupeFindings removes findings that are identical in id, location, and

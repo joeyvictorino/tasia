@@ -1,0 +1,166 @@
+package report
+
+import (
+	"fmt"
+	"html"
+	"strings"
+	"time"
+
+	"github.com/joeyvictorino/tasia/internal/rules"
+)
+
+// RenderHTML generates a self-contained HTML security report from scan findings.
+func RenderHTML(findings []rules.Finding, summary ScanSummary, scanPath, title string) string {
+	if title == "" {
+		title = "Tasia Security Report"
+	}
+
+	esc := html.EscapeString
+
+	var b strings.Builder
+	b.WriteString(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>` + esc(title) + `</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f8f9fa;color:#212529;line-height:1.6;padding:16px}
+.container{max-width:960px;margin:0 auto}
+header{background:#1a1a2e;color:#fff;padding:24px;border-radius:8px 8px 0 0}
+header h1{font-size:1.5rem;margin-bottom:4px}
+header .meta{font-size:0.85rem;opacity:0.8}
+.summary-bar{display:flex;gap:12px;padding:16px 24px;background:#fff;border-bottom:1px solid #dee2e6;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-weight:600;font-size:0.9rem}
+.badge .count{font-size:1.1rem}
+.badge-critical{background:#dc3545;color:#fff}
+.badge-high{background:#fd7e14;color:#fff}
+.badge-medium{background:#ffc107;color:#212529}
+.badge-low{background:#6c757d;color:#fff}
+.badge-total{background:#0d6efd;color:#fff}
+table{width:100%;border-collapse:collapse;background:#fff}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid #dee2e6}
+th{background:#e9ecef;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;user-select:none}
+th:hover{background:#dee2e6}
+tr:hover{background:#f1f3f5}
+.sev{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:700;color:#fff}
+.sev-CRITICAL{background:#dc3545}
+.sev-HIGH{background:#fd7e14}
+.sev-MEDIUM{background:#ffc107;color:#212529}
+.sev-LOW{background:#6c757d}
+details{margin:0}
+details summary{cursor:pointer;font-size:0.85rem;color:#0d6efd;padding:4px 0}
+details .detail-body{padding:8px 0;font-size:0.85rem;color:#495057}
+details .detail-body dt{font-weight:600;margin-top:6px}
+details .detail-body dd{margin-left:16px}
+footer{padding:16px 24px;background:#e9ecef;border-radius:0 0 8px 8px;text-align:center;font-size:0.8rem;color:#6c757d}
+</style>
+</head>
+<body>
+<div class="container">
+`)
+
+	b.WriteString(`<header>
+<h1>` + esc(title) + `</h1>
+<div class="meta">Scanned: ` + esc(scanPath) + ` &middot; ` + esc(time.Now().Format("2006-01-02 15:04:05 MST")) + `</div>
+</header>
+`)
+
+	critical := summary.BySeverity["CRITICAL"]
+	high := summary.BySeverity["HIGH"]
+	medium := summary.BySeverity["MEDIUM"]
+	low := summary.BySeverity["LOW"]
+	total := summary.TotalFindings
+
+	b.WriteString(`<div class="summary-bar">
+<span class="badge badge-total"><span class="count">` + fmt.Sprint(total) + `</span> Total</span>
+`)
+	if critical > 0 {
+		b.WriteString(`<span class="badge badge-critical"><span class="count">` + fmt.Sprint(critical) + `</span> Critical</span>` + "\n")
+	}
+	if high > 0 {
+		b.WriteString(`<span class="badge badge-high"><span class="count">` + fmt.Sprint(high) + `</span> High</span>` + "\n")
+	}
+	if medium > 0 {
+		b.WriteString(`<span class="badge badge-medium"><span class="count">` + fmt.Sprint(medium) + `</span> Medium</span>` + "\n")
+	}
+	if low > 0 {
+		b.WriteString(`<span class="badge badge-low"><span class="count">` + fmt.Sprint(low) + `</span> Low</span>` + "\n")
+	}
+	b.WriteString("</div>\n")
+
+	b.WriteString(`<table id="findings">
+<thead><tr>
+<th data-sort="severity">Severity</th>
+<th data-sort="rule">Rule</th>
+<th data-sort="file">File</th>
+<th data-sort="line">Line</th>
+<th>Details</th>
+</tr></thead>
+<tbody>
+`)
+
+	sevOrder := []rules.Severity{rules.SeverityCritical, rules.SeverityHigh, rules.SeverityMedium, rules.SeverityLow}
+	bySev := groupBySev(findings)
+	for _, sev := range sevOrder {
+		for _, f := range bySev[sev] {
+			loc := esc(f.File)
+			lineStr := ""
+			if f.Line > 0 {
+				lineStr = fmt.Sprint(f.Line)
+			}
+			b.WriteString("<tr>\n")
+			b.WriteString(`<td><span class="sev sev-` + string(f.Severity) + `">` + string(f.Severity) + `</span></td>` + "\n")
+			b.WriteString(`<td>` + esc(f.ID) + `</td>` + "\n")
+			b.WriteString(`<td>` + loc + `</td>` + "\n")
+			b.WriteString(`<td>` + lineStr + `</td>` + "\n")
+			b.WriteString("<td>\n")
+			b.WriteString(`<details><summary>` + esc(f.Title) + `</summary><div class="detail-body">` + "\n")
+			if f.Evidence != "" {
+				b.WriteString(`<dt>Evidence</dt><dd>` + esc(f.Evidence) + `</dd>` + "\n")
+			}
+			if f.Why != "" {
+				b.WriteString(`<dt>Why</dt><dd>` + esc(f.Why) + `</dd>` + "\n")
+			}
+			if f.Fix != "" {
+				b.WriteString(`<dt>Fix</dt><dd>` + esc(f.Fix) + `</dd>` + "\n")
+			}
+			b.WriteString("</div></details>\n</td>\n</tr>\n")
+		}
+	}
+
+	b.WriteString(`</tbody>
+</table>
+`)
+
+	b.WriteString(`<footer>Generated by <strong>tasia</strong></footer>
+</div>
+
+<script>
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const table = th.closest('table');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const col = Array.from(th.parentNode.children).indexOf(th);
+    const asc = th.dataset.dir !== 'asc';
+    th.dataset.dir = asc ? 'asc' : 'desc';
+    rows.sort((a, b) => {
+      const at = a.children[col].textContent.trim();
+      const bt = b.children[col].textContent.trim();
+      if (th.dataset.sort === 'line') {
+        return asc ? (parseInt(at)||0) - (parseInt(bt)||0) : (parseInt(bt)||0) - (parseInt(at)||0);
+      }
+      return asc ? at.localeCompare(bt) : bt.localeCompare(at);
+    });
+    rows.forEach(r => tbody.appendChild(r));
+  });
+});
+</script>
+</body>
+</html>
+`)
+
+	return b.String()
+}

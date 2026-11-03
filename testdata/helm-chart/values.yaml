@@ -1,0 +1,18 @@
+replicaCount: 1
+
+image:
+  repository: ollama/ollama
+  tag: latest
+
+service:
+  type: LoadBalancer
+  port: 11434
+
+securityContext:
+  privileged: true
+  runAsUser: 0
+
+hostNetwork: true
+
+persistence:
+  hostPath: /data/models

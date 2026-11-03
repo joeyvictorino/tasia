@@ -2,6 +2,7 @@ package report
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,60 @@ func TestDecideAndPrint(t *testing.T) {
 	}
 	// print does not panic
 	PrintSummary(fs, d, r)
+}
+
+func TestPrintVerboseSummary(t *testing.T) {
+	fs := []rules.Finding{
+		{
+			ID:       "exposed_inference",
+			Severity: "HIGH",
+			Title:    "Inference API published to all interfaces",
+			File:     "docker-compose.yml",
+			Line:     5,
+			Evidence: "port=11434:11434",
+			Why:      "The inference API may be reachable from outside",
+			Fix:      "Bind to 127.0.0.1",
+		},
+		{
+			ID:       "latest_image",
+			Severity: "MEDIUM",
+			Title:    "Image uses latest tag",
+			File:     "docker-compose.yml",
+			Line:     3,
+			Evidence: "image=ollama/ollama:latest",
+			Why:      "Non-deterministic builds",
+			Fix:      "Pin to a specific digest or version tag",
+		},
+	}
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	PrintVerboseSummary(fs, "BLOCKED", "HIGH")
+
+	w.Close()
+	os.Stdout = old
+	b, _ := io.ReadAll(r)
+	output := string(b)
+
+	if !strings.Contains(output, "Evidence: port=11434:11434") {
+		t.Errorf("verbose output missing evidence: %s", output)
+	}
+	if !strings.Contains(output, "Why:") {
+		t.Errorf("verbose output missing why: %s", output)
+	}
+	if !strings.Contains(output, "Fix:") {
+		t.Errorf("verbose output missing fix: %s", output)
+	}
+	if !strings.Contains(output, "── HIGH ──") {
+		t.Errorf("verbose output missing severity header: %s", output)
+	}
+	if !strings.Contains(output, "── MEDIUM ──") {
+		t.Errorf("verbose output missing MEDIUM header: %s", output)
+	}
+	if !strings.Contains(output, "2 finding(s) require attention") {
+		t.Errorf("verbose output missing finding count: %s", output)
+	}
 }
 
 func TestManifestAndNoSecrets(t *testing.T) {
@@ -145,6 +200,350 @@ func TestWriteArtifactsGolden(t *testing.T) {
 	// review-time WriteArtifacts must NOT imply an LLM was consulted.
 	if _, err := os.Stat(filepath.Join(outDir, "LLM_REVIEW.md")); err == nil {
 		t.Error("WriteArtifacts should not write LLM_REVIEW.md; it is produced only by `tasia explain`")
+	}
+}
+
+func TestFindingsToSARIF(t *testing.T) {
+	fs := []rules.Finding{
+		{ID: "exposed_inference", Severity: "HIGH", Title: "Inference API published to all interfaces", File: "docker-compose.yml", Line: 5, Evidence: "port=11434:11434", Why: "The inference API may be reachable", Fix: "Bind to 127.0.0.1"},
+		{ID: "exposed_vector", Severity: "MEDIUM", Title: "Vector DB published to host", File: "docker-compose.yml", Line: 12, Evidence: "port=6333:6333", Why: "Vector DB", Fix: "Use internal net"},
+		{ID: "exposed_inference", Severity: "HIGH", Title: "Inference API published to all interfaces", File: "compose2.yml", Line: 3, Evidence: "port=11434:11434", Why: "dup", Fix: "dup"},
+	}
+	out, err := FindingsToSARIF(fs, "0.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sarif struct {
+		Schema  string `json:"$schema"`
+		Version string `json:"version"`
+		Runs    []struct {
+			Tool struct {
+				Driver struct {
+					Name    string `json:"name"`
+					Version string `json:"version"`
+					Rules   []struct {
+						ID      string `json:"id"`
+						HelpURI string `json:"helpUri"`
+					} `json:"rules"`
+				} `json:"driver"`
+			} `json:"tool"`
+			Results []struct {
+				RuleID    string `json:"ruleId"`
+				Level     string `json:"level"`
+				Locations []struct {
+					PhysicalLocation struct {
+						ArtifactLocation struct {
+							URI string `json:"uri"`
+						} `json:"artifactLocation"`
+						Region *struct {
+							StartLine int `json:"startLine"`
+						} `json:"region"`
+					} `json:"physicalLocation"`
+				} `json:"locations"`
+			} `json:"results"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(out), &sarif); err != nil {
+		t.Fatalf("SARIF is not valid JSON: %v\n%s", err, out)
+	}
+	if sarif.Version != "2.1.0" {
+		t.Errorf("version = %q, want 2.1.0", sarif.Version)
+	}
+	if !strings.Contains(sarif.Schema, "sarif-schema-2.1.0") {
+		t.Errorf("$schema missing sarif-schema-2.1.0: %q", sarif.Schema)
+	}
+	if len(sarif.Runs) != 1 {
+		t.Fatalf("runs = %d, want 1", len(sarif.Runs))
+	}
+	run := sarif.Runs[0]
+	if run.Tool.Driver.Name != "tasia" {
+		t.Errorf("driver name = %q", run.Tool.Driver.Name)
+	}
+	if run.Tool.Driver.Version != "0.1.0" {
+		t.Errorf("driver version = %q", run.Tool.Driver.Version)
+	}
+	// Two distinct rule IDs (exposed_inference deduped)
+	if len(run.Tool.Driver.Rules) != 2 {
+		t.Errorf("rules = %d, want 2", len(run.Tool.Driver.Rules))
+	}
+	for _, r := range run.Tool.Driver.Rules {
+		want := "https://github.com/joeyvictorino/tasia/blob/main/docs/rules.md#" + r.ID
+		if r.HelpURI != want {
+			t.Errorf("rule %s helpUri = %q, want %q", r.ID, r.HelpURI, want)
+		}
+	}
+	// Three results (one per finding)
+	if len(run.Results) != 3 {
+		t.Fatalf("results = %d, want 3", len(run.Results))
+	}
+	// HIGH maps to error, MEDIUM maps to warning
+	if run.Results[0].Level != "error" {
+		t.Errorf("HIGH -> %q, want error", run.Results[0].Level)
+	}
+	if run.Results[1].Level != "warning" {
+		t.Errorf("MEDIUM -> %q, want warning", run.Results[1].Level)
+	}
+	// Location includes line number
+	if run.Results[0].Locations[0].PhysicalLocation.Region == nil || run.Results[0].Locations[0].PhysicalLocation.Region.StartLine != 5 {
+		t.Errorf("first result location wrong: %+v", run.Results[0].Locations)
+	}
+}
+
+func TestSARIFEmptyFindings(t *testing.T) {
+	out, err := FindingsToSARIF(nil, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"results": null`) && !strings.Contains(out, `"results":null`) {
+		// null is fine for empty results in SARIF
+	}
+	if !strings.Contains(out, `"version": "2.1.0"`) {
+		t.Errorf("empty SARIF missing version")
+	}
+}
+
+func TestSeverityToSARIFMapping(t *testing.T) {
+	cases := []struct {
+		sev  rules.Severity
+		want string
+	}{
+		{rules.SeverityCritical, "error"},
+		{rules.SeverityHigh, "error"},
+		{rules.SeverityMedium, "warning"},
+		{rules.SeverityLow, "note"},
+	}
+	for _, tc := range cases {
+		fs := []rules.Finding{{ID: "test", Severity: tc.sev, Title: "t", File: "f.yml", Line: 1, Evidence: "e", Why: "w", Fix: "f"}}
+		out, _ := FindingsToSARIF(fs, "dev")
+		if !strings.Contains(out, `"level": "`+tc.want+`"`) {
+			t.Errorf("%s: expected level %q in output", tc.sev, tc.want)
+		}
+	}
+}
+
+func TestAllCatalogRulesProduceValidSARIFLevel(t *testing.T) {
+	validLevels := map[string]bool{"error": true, "warning": true, "note": true}
+	catalog := rules.Catalog()
+	if len(catalog) == 0 {
+		t.Fatal("catalog is empty")
+	}
+	for _, r := range catalog {
+		if r.Default == "" {
+			t.Errorf("rule %s has empty default severity", r.ID)
+			continue
+		}
+		f := rules.Finding{
+			ID:       r.ID,
+			Severity: r.Default,
+			Title:    r.Title,
+			File:     "test.yml",
+			Line:     1,
+			Evidence: "test",
+			Why:      "test",
+			Fix:      "test",
+		}
+		out, err := FindingsToSARIF([]rules.Finding{f}, "test")
+		if err != nil {
+			t.Errorf("rule %s: FindingsToSARIF error: %v", r.ID, err)
+			continue
+		}
+		var sarif struct {
+			Runs []struct {
+				Results []struct {
+					Level string `json:"level"`
+				} `json:"results"`
+			} `json:"runs"`
+		}
+		if err := json.Unmarshal([]byte(out), &sarif); err != nil {
+			t.Errorf("rule %s: invalid SARIF JSON: %v", r.ID, err)
+			continue
+		}
+		if len(sarif.Runs) != 1 || len(sarif.Runs[0].Results) != 1 {
+			t.Errorf("rule %s: expected 1 run with 1 result", r.ID)
+			continue
+		}
+		level := sarif.Runs[0].Results[0].Level
+		if !validLevels[level] {
+			t.Errorf("rule %s (severity %s): SARIF level %q is not valid (want error/warning/note)", r.ID, r.Default, level)
+		}
+	}
+	t.Logf("verified %d catalog rules produce valid SARIF levels", len(catalog))
+}
+
+func TestBuildSummary(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "exposed_inference", Severity: rules.SeverityHigh, Title: "a", File: "f.yml"},
+		{ID: "exposed_vector", Severity: rules.SeverityHigh, Title: "b", File: "f.yml"},
+		{ID: "latest_image", Severity: rules.SeverityMedium, Title: "c", File: "f.yml"},
+		{ID: "vector_db_no_auth", Severity: rules.SeverityLow, Title: "d", File: "f.yml"},
+	}
+	s := BuildSummary(findings, 5, 123)
+	if s.TotalFindings != 4 {
+		t.Errorf("TotalFindings = %d, want 4", s.TotalFindings)
+	}
+	if s.BySeverity["HIGH"] != 2 {
+		t.Errorf("BySeverity[HIGH] = %d, want 2", s.BySeverity["HIGH"])
+	}
+	if s.BySeverity["MEDIUM"] != 1 {
+		t.Errorf("BySeverity[MEDIUM] = %d, want 1", s.BySeverity["MEDIUM"])
+	}
+	if s.BySeverity["LOW"] != 1 {
+		t.Errorf("BySeverity[LOW] = %d, want 1", s.BySeverity["LOW"])
+	}
+	if s.BySeverity["CRITICAL"] != 0 {
+		t.Errorf("BySeverity[CRITICAL] = %d, want 0", s.BySeverity["CRITICAL"])
+	}
+	if s.ByCategory["compose"] != 4 {
+		t.Errorf("ByCategory[compose] = %d, want 4", s.ByCategory["compose"])
+	}
+	if s.FilesScanned != 5 {
+		t.Errorf("FilesScanned = %d, want 5", s.FilesScanned)
+	}
+	if s.DurationMs != 123 {
+		t.Errorf("DurationMs = %d, want 123", s.DurationMs)
+	}
+}
+
+func TestBuildSummaryEmpty(t *testing.T) {
+	s := BuildSummary(nil, 0, 0)
+	if s.TotalFindings != 0 {
+		t.Errorf("TotalFindings = %d, want 0", s.TotalFindings)
+	}
+	for _, sev := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW"} {
+		if s.BySeverity[sev] != 0 {
+			t.Errorf("BySeverity[%s] = %d, want 0", sev, s.BySeverity[sev])
+		}
+	}
+}
+
+func TestFindingsToJSONIncludesSummary(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "exposed_inference", Severity: rules.SeverityHigh, Title: "a", File: "f.yml", Line: 1, Evidence: "e", Why: "w", Fix: "f"},
+	}
+	summary := BuildSummary(findings, 3, 42)
+	out, err := FindingsToJSON(findings, "BLOCKED", "HIGH", &summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"summary"`) {
+		t.Error("JSON output should contain summary")
+	}
+	if !strings.Contains(out, `"total_findings": 1`) {
+		t.Error("summary should contain total_findings")
+	}
+	if !strings.Contains(out, `"files_scanned": 3`) {
+		t.Error("summary should contain files_scanned")
+	}
+	if !strings.Contains(out, `"duration_ms": 42`) {
+		t.Error("summary should contain duration_ms")
+	}
+	if !strings.Contains(out, `"by_severity"`) {
+		t.Error("summary should contain by_severity")
+	}
+	if !strings.Contains(out, `"by_category"`) {
+		t.Error("summary should contain by_category")
+	}
+}
+
+func TestFindingsToJSONOmitsSummaryWhenNil(t *testing.T) {
+	out, err := FindingsToJSON(nil, "PASS", "LOW", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, `"summary"`) {
+		t.Error("JSON output should omit summary when nil")
+	}
+}
+
+func TestFindingsToJSONIncludesRemediation(t *testing.T) {
+	findings := []rules.Finding{{
+		ID: "exposed_inference", Severity: rules.SeverityHigh,
+		Title: "test", File: "f.yaml", Line: 1,
+		Evidence: "x=1", Why: "because", Fix: "fix it",
+	}}
+	out, err := FindingsToJSON(findings, "BLOCKED", "HIGH", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	arr, ok := parsed["findings"].([]interface{})
+	if !ok || len(arr) == 0 {
+		t.Fatal("no findings in output")
+	}
+	f0 := arr[0].(map[string]interface{})
+	rem, ok := f0["remediation"].(map[string]interface{})
+	if !ok {
+		t.Fatal("finding should have remediation object")
+	}
+	if rem["category"] != "compose" {
+		t.Errorf("remediation.category = %v, want compose", rem["category"])
+	}
+	if rem["doc_url"] == nil || rem["doc_url"] == "" {
+		t.Error("remediation.doc_url should not be empty")
+	}
+	if rem["summary"] == nil || rem["summary"] == "" {
+		t.Error("remediation.summary should not be empty")
+	}
+	refs, ok := rem["refs"].([]interface{})
+	if !ok || len(refs) == 0 {
+		t.Error("remediation.refs should have compliance references for compose category")
+	}
+}
+
+func TestExitSummaryLineNoFindings(t *testing.T) {
+	line := ExitSummaryLine(nil, 0)
+	if line != "Found 0 issue(s). Exit code: 0 (pass)" {
+		t.Errorf("unexpected: %q", line)
+	}
+}
+
+func TestExitSummaryLineWithFindings(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "a", Severity: rules.SeverityCritical},
+		{ID: "b", Severity: rules.SeverityHigh},
+		{ID: "c", Severity: rules.SeverityHigh},
+		{ID: "d", Severity: rules.SeverityMedium},
+		{ID: "e", Severity: rules.SeverityLow},
+	}
+	line := ExitSummaryLine(findings, 1)
+	if !strings.Contains(line, "Found 5 issue(s)") {
+		t.Errorf("missing count: %q", line)
+	}
+	if !strings.Contains(line, "1 critical") {
+		t.Errorf("missing critical: %q", line)
+	}
+	if !strings.Contains(line, "2 high") {
+		t.Errorf("missing high: %q", line)
+	}
+	if !strings.Contains(line, "1 medium") {
+		t.Errorf("missing medium: %q", line)
+	}
+	if !strings.Contains(line, "1 low") {
+		t.Errorf("missing low: %q", line)
+	}
+	if !strings.Contains(line, "Exit code: 1 (findings above threshold)") {
+		t.Errorf("missing exit reason: %q", line)
+	}
+}
+
+func TestExitSummaryLinePassExitCode(t *testing.T) {
+	findings := []rules.Finding{
+		{ID: "a", Severity: rules.SeverityLow},
+	}
+	line := ExitSummaryLine(findings, 0)
+	if !strings.Contains(line, "Exit code: 0 (pass)") {
+		t.Errorf("unexpected: %q", line)
+	}
+}
+
+func TestExitSummaryLineErrorExitCode(t *testing.T) {
+	line := ExitSummaryLine(nil, 2)
+	if !strings.Contains(line, "Exit code: 2 (error)") {
+		t.Errorf("unexpected: %q", line)
 	}
 }
 

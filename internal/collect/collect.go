@@ -1,3 +1,8 @@
+// Package collect walks a directory tree and parses Docker Compose,
+// .env, Dockerfile, Caddyfile, nginx.conf, Kubernetes manifest and Helm
+// values.yaml files into structured data. The result is a [Collected]
+// value that the rules package inspects. Parsing uses yaml.v3 nodes for
+// accurate line numbers and never reads secret values into the output.
 package collect
 
 import (
@@ -18,14 +23,32 @@ type Collected struct {
 	ComposeFiles       []compose.File
 	EnvFiles           []EnvFile
 	Dockerfiles        []Dockerfile
-	OtherConfigs       []string // Modelfile etc later
+	ReverseProxyConfigs []ReverseProxyConfig
+	KubeManifests       []KubeManifest
+	HelmValues          []HelmValues
+	TerraformFiles      []TerraformFile
+	OtherConfigs        []string // Modelfile etc later
 	DetectedRuntimes   []string
 	DetectedInterfaces []string
 	DetectedRetrieval  []string
-	PublishedPorts     []int
-	SecretKeyNames     []string
-	HasManifest        bool
-	ParseErrors        []ConfigError
+	// DetectedAgentRuntimes lists agent runtimes and workflow engines that
+	// execute tools or model-written code (n8n, Flowise, Langflow, Dify,
+	// OpenHands and similar). See IsAgentRuntimeImage.
+	DetectedAgentRuntimes []string
+	PublishedPorts        []int
+	SecretKeyNames        []string
+	HasManifest           bool
+	HasNetworkPolicy      bool
+	ParseErrors           []ConfigError
+}
+
+// FilesScanned returns the total number of configuration files that were
+// collected and inspected during the scan.
+func (c *Collected) FilesScanned() int {
+	n := len(c.ComposeFiles) + len(c.EnvFiles) + len(c.Dockerfiles) +
+		len(c.ReverseProxyConfigs) + len(c.KubeManifests) + len(c.HelmValues) +
+		len(c.TerraformFiles) + len(c.OtherConfigs)
+	return n
 }
 
 // ConfigError records a config file that was found but could not be parsed.
@@ -43,10 +66,13 @@ type EnvFile struct {
 }
 
 // EnvKey is a secret-looking key name and the 1-based line it appears on.
-// Values are never captured.
+// Values are never captured. ValuePattern is set only when the value
+// matches a known secret pattern (e.g. "sk- prefix"); the actual value
+// is never stored.
 type EnvKey struct {
-	Name string
-	Line int
+	Name         string
+	Line         int
+	ValuePattern string // empty unless value matches a known pattern
 }
 
 // KeyNames returns just the key names (values are never stored).
@@ -58,10 +84,263 @@ func (e EnvFile) KeyNames() []string {
 	return out
 }
 
-// Dockerfile basic.
+// ReverseProxyConfig holds a parsed Caddyfile or nginx.conf with
+// security-relevant proxy and auth information.
+type ReverseProxyConfig struct {
+	Path    string
+	Kind    string // "caddyfile" or "nginx"
+	Content string
+	Proxies []ProxyBlock
+}
+
+// ProxyBlock records one reverse_proxy (Caddy) or location+proxy_pass (nginx)
+// directive with whether auth is configured for it.
+type ProxyBlock struct {
+	Upstream string
+	Line     int
+	HasAuth  bool
+}
+
+// ParseCaddyfile extracts reverse_proxy directives and whether they are
+// protected by basic_auth or forward_auth.
+func ParseCaddyfile(path, content string) ReverseProxyConfig {
+	cfg := ReverseProxyConfig{Path: path, Kind: "caddyfile", Content: content}
+	lines := strings.Split(content, "\n")
+	depth := 0
+	var currentProxy *ProxyBlock
+	blockHasAuth := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.Contains(trimmed, "{") {
+			depth++
+		}
+		if strings.Contains(trimmed, "}") {
+			if depth > 0 {
+				depth--
+			}
+			if currentProxy != nil && depth <= 1 {
+				currentProxy.HasAuth = blockHasAuth
+				cfg.Proxies = append(cfg.Proxies, *currentProxy)
+				currentProxy = nil
+				blockHasAuth = false
+			}
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "basic_auth") || strings.HasPrefix(lower, "forward_auth") {
+			blockHasAuth = true
+		}
+		if strings.HasPrefix(lower, "reverse_proxy") {
+			parts := strings.Fields(trimmed)
+			upstream := ""
+			for j := len(parts) - 1; j >= 1; j-- {
+				if parts[j] == "{" {
+					continue
+				}
+				upstream = parts[j]
+				break
+			}
+			if strings.Contains(trimmed, "{") {
+				currentProxy = &ProxyBlock{Upstream: upstream, Line: i + 1}
+			} else {
+				cfg.Proxies = append(cfg.Proxies, ProxyBlock{
+					Upstream: upstream,
+					Line:     i + 1,
+					HasAuth:  blockHasAuth,
+				})
+			}
+		}
+	}
+	if currentProxy != nil {
+		currentProxy.HasAuth = blockHasAuth
+		cfg.Proxies = append(cfg.Proxies, *currentProxy)
+	}
+	return cfg
+}
+
+// ParseNginxConf extracts proxy_pass directives and whether their enclosing
+// location block has auth_basic or auth_request.
+func ParseNginxConf(path, content string) ReverseProxyConfig {
+	cfg := ReverseProxyConfig{Path: path, Kind: "nginx", Content: content}
+	lines := strings.Split(content, "\n")
+	type locCtx struct {
+		hasAuth bool
+	}
+	var locStack []locCtx
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if strings.HasPrefix(lower, "location") && strings.Contains(trimmed, "{") {
+			locStack = append(locStack, locCtx{})
+		}
+		if strings.HasPrefix(lower, "auth_basic") && !strings.Contains(lower, "auth_basic_user_file") && !strings.HasSuffix(lower, "off;") {
+			if len(locStack) > 0 {
+				locStack[len(locStack)-1].hasAuth = true
+			}
+		}
+		if strings.HasPrefix(lower, "auth_request") && !strings.HasSuffix(lower, "off;") {
+			if len(locStack) > 0 {
+				locStack[len(locStack)-1].hasAuth = true
+			}
+		}
+		if strings.Contains(lower, "proxy_pass") {
+			parts := strings.Fields(trimmed)
+			upstream := ""
+			for j, p := range parts {
+				if strings.ToLower(p) == "proxy_pass" && j+1 < len(parts) {
+					upstream = strings.TrimSuffix(parts[j+1], ";")
+					break
+				}
+			}
+			hasAuth := false
+			if len(locStack) > 0 {
+				hasAuth = locStack[len(locStack)-1].hasAuth
+			}
+			cfg.Proxies = append(cfg.Proxies, ProxyBlock{
+				Upstream: upstream,
+				Line:     i + 1,
+				HasAuth:  hasAuth,
+			})
+		}
+		if strings.Contains(trimmed, "}") && len(locStack) > 0 {
+			locStack = locStack[:len(locStack)-1]
+		}
+	}
+	return cfg
+}
+
+// Dockerfile holds a parsed Dockerfile with line-level information about
+// security-relevant directives.
 type Dockerfile struct {
 	Path    string
 	Content string
+	// User is the effective USER from the last USER directive, or "" if none.
+	User     string
+	UserLine int
+	// Exposes lists EXPOSE directives with their port strings and lines.
+	Exposes []DockerfileExpose
+	// Entrypoint is the ENTRYPOINT directive (shell or exec form).
+	Entrypoint     string
+	EntrypointLine int
+	EntrypointExec bool // true if exec form (JSON array)
+	// Cmd is the CMD directive (shell or exec form).
+	Cmd     string
+	CmdLine int
+	CmdExec bool
+	// Args lists ARG directives.
+	Args []DockerfileArg
+	// Workdirs lists WORKDIR directives.
+	Workdirs []DockerfileWorkdir
+	// Adds lists ADD directives.
+	Adds []DockerfileAdd
+}
+
+// DockerfileExpose records one EXPOSE directive.
+type DockerfileExpose struct {
+	Ports string // the raw port list, e.g. "8080 443/tcp"
+	Line  int
+}
+
+// DockerfileArg records one ARG directive.
+type DockerfileArg struct {
+	Name         string
+	DefaultValue string // "" if no default
+	Line         int
+}
+
+// DockerfileWorkdir records one WORKDIR directive.
+type DockerfileWorkdir struct {
+	Path string
+	Line int
+}
+
+// DockerfileAdd records one ADD directive.
+type DockerfileAdd struct {
+	Source string
+	Dest   string
+	Line   int
+	IsURL  bool
+}
+
+// ParseDockerfile extracts security-relevant directives from Dockerfile content.
+func ParseDockerfile(path, content string) Dockerfile {
+	df := Dockerfile{Path: path, Content: content}
+	for i, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		upper := strings.ToUpper(trimmed)
+		if strings.HasPrefix(upper, "USER ") {
+			df.User = strings.TrimSpace(trimmed[5:])
+			df.UserLine = i + 1
+		}
+		if strings.HasPrefix(upper, "EXPOSE ") {
+			df.Exposes = append(df.Exposes, DockerfileExpose{
+				Ports: strings.TrimSpace(trimmed[7:]),
+				Line:  i + 1,
+			})
+		}
+		if strings.HasPrefix(upper, "ENTRYPOINT ") {
+			raw := strings.TrimSpace(trimmed[11:])
+			df.Entrypoint = raw
+			df.EntrypointLine = i + 1
+			df.EntrypointExec = strings.HasPrefix(raw, "[")
+		}
+		if strings.HasPrefix(upper, "CMD ") {
+			raw := strings.TrimSpace(trimmed[4:])
+			df.Cmd = raw
+			df.CmdLine = i + 1
+			df.CmdExec = strings.HasPrefix(raw, "[")
+		}
+		if strings.HasPrefix(upper, "ARG ") {
+			argStr := strings.TrimSpace(trimmed[4:])
+			arg := DockerfileArg{Line: i + 1}
+			if idx := strings.Index(argStr, "="); idx >= 0 {
+				arg.Name = argStr[:idx]
+				arg.DefaultValue = argStr[idx+1:]
+			} else {
+				arg.Name = argStr
+			}
+			df.Args = append(df.Args, arg)
+		}
+		if strings.HasPrefix(upper, "WORKDIR ") {
+			df.Workdirs = append(df.Workdirs, DockerfileWorkdir{
+				Path: strings.TrimSpace(trimmed[8:]),
+				Line: i + 1,
+			})
+		}
+		if strings.HasPrefix(upper, "ADD ") {
+			parts := strings.Fields(trimmed[4:])
+			add := DockerfileAdd{Line: i + 1}
+			if len(parts) >= 2 {
+				add.Source = parts[0]
+				add.Dest = parts[len(parts)-1]
+				add.IsURL = strings.HasPrefix(parts[0], "http://") || strings.HasPrefix(parts[0], "https://")
+			} else if len(parts) == 1 {
+				add.Source = parts[0]
+			}
+			df.Adds = append(df.Adds, add)
+		}
+	}
+	return df
+}
+
+// isComposeFile matches Docker Compose file names including overrides and
+// variant files (docker-compose.override.yml, docker-compose.prod.yaml, etc.).
+func isComposeFile(lower string) bool {
+	switch lower {
+	case "docker-compose.yml", "docker-compose.yaml",
+		"compose.yml", "compose.yaml":
+		return true
+	}
+	if strings.HasPrefix(lower, "docker-compose.") || strings.HasPrefix(lower, "compose.") {
+		return strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")
+	}
+	return false
 }
 
 // WalkAndCollect walks the dir and extracts relevant data.
@@ -85,8 +364,7 @@ func WalkAndCollect(root string) (*Collected, error) {
 		lower := strings.ToLower(d.Name())
 
 		switch {
-		case lower == "docker-compose.yml" || lower == "docker-compose.yaml" ||
-			lower == "compose.yml" || lower == "compose.yaml":
+		case isComposeFile(lower):
 			f, perr := compose.Parse(path)
 			if perr != nil {
 				// Fail closed: an unparseable compose file is recorded so the
@@ -109,11 +387,45 @@ func WalkAndCollect(root string) (*Collected, error) {
 			c.SecretKeyNames = append(c.SecretKeyNames, ef.KeyNames()...)
 		case lower == "dockerfile":
 			content, _ := os.ReadFile(path)
-			c.Dockerfiles = append(c.Dockerfiles, Dockerfile{Path: rel, Content: string(content)})
+			c.Dockerfiles = append(c.Dockerfiles, ParseDockerfile(rel, string(content)))
+		case lower == "caddyfile":
+			content, _ := os.ReadFile(path)
+			c.ReverseProxyConfigs = append(c.ReverseProxyConfigs, ParseCaddyfile(rel, string(content)))
+		case lower == "nginx.conf":
+			content, _ := os.ReadFile(path)
+			c.ReverseProxyConfigs = append(c.ReverseProxyConfigs, ParseNginxConf(rel, string(content)))
 		case lower == "modelfile":
 			c.OtherConfigs = append(c.OtherConfigs, rel)
+		case strings.HasSuffix(lower, ".tf"):
+			content, _ := os.ReadFile(path)
+			tf := ParseTerraformFile(rel, string(content))
+			if len(tf.SecurityGroups) > 0 || len(tf.S3Buckets) > 0 || len(tf.IAMPolicies) > 0 {
+				c.TerraformFiles = append(c.TerraformFiles, tf)
+			}
 		case lower == "ai-stack-manifest.json":
 			c.HasManifest = true
+		default:
+			if strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") {
+				content, rerr := os.ReadFile(path)
+				if rerr != nil {
+					break
+				}
+				s := string(content)
+				if IsHelmValuesFile(lower) && hasChartYAML(filepath.Dir(path)) {
+					hv := ParseHelmValues(rel, s)
+					if len(hv.Findings) > 0 {
+						c.HelmValues = append(c.HelmValues, hv)
+					}
+				} else if IsKubeFile(lower, s) {
+					manifests, _ := ParseKubeYAML(rel, s)
+					c.KubeManifests = append(c.KubeManifests, manifests...)
+					for _, m := range manifests {
+						if m.Kind == "NetworkPolicy" {
+							c.HasNetworkPolicy = true
+						}
+					}
+				}
+			}
 		}
 		return nil
 	})
@@ -147,6 +459,9 @@ func WalkAndCollect(root string) (*Collected, error) {
 					c.DetectedInterfaces = append(c.DetectedInterfaces, label)
 				}
 			}
+			if label, ok := IsAgentRuntimeImage(svc.Image); ok {
+				c.DetectedAgentRuntimes = append(c.DetectedAgentRuntimes, label)
+			}
 			for label, needles := range map[string][]string{
 				"qdrant":   {"qdrant"},
 				"chroma":   {"chroma"},
@@ -164,8 +479,62 @@ func WalkAndCollect(root string) (*Collected, error) {
 	c.DetectedRuntimes = sortStrings(dedup(c.DetectedRuntimes))
 	c.DetectedInterfaces = sortStrings(dedup(c.DetectedInterfaces))
 	c.DetectedRetrieval = sortStrings(dedup(c.DetectedRetrieval))
+	c.DetectedAgentRuntimes = sortStrings(dedup(c.DetectedAgentRuntimes))
 
 	return c, nil
+}
+
+// agentRuntimeSubstrings identify agent runtimes by a substring of the image
+// reference. Each entry is distinctive enough not to match unrelated images.
+var agentRuntimeSubstrings = []struct{ label, needle string }{
+	{"flowise", "flowise"},
+	{"langflow", "langflow"},
+	{"dify", "langgenius/dify"},
+	{"dify", "dify-api"},
+	{"openhands", "openhands"},
+	{"openhands", "all-hands"},
+	{"open-interpreter", "open-interpreter"},
+	{"open-interpreter", "openinterpreter"},
+	{"memdoor", "memdoor"},
+	{"crewai", "crewai"},
+}
+
+// agentRuntimeRepoNames identify agent runtimes whose short names would match
+// too much as substrings (n8n-docs, autogenerated-*), so they must equal the
+// image's final path segment with the tag or digest removed.
+var agentRuntimeRepoNames = map[string]string{
+	"n8n":            "n8n",
+	"autogen":        "autogen",
+	"autogen-studio": "autogen",
+	"autogenstudio":  "autogen",
+	"dify":           "dify",
+}
+
+// IsAgentRuntimeImage reports whether an image reference names an agent
+// runtime or workflow engine that executes tools or model-written code, and
+// returns its label. It is the single source of truth shared by the collector
+// (for the stack manifest) and the rules engine (for exposure rules).
+func IsAgentRuntimeImage(image string) (string, bool) {
+	img := strings.ToLower(strings.TrimSpace(image))
+	if img == "" {
+		return "", false
+	}
+	for _, r := range agentRuntimeSubstrings {
+		if strings.Contains(img, r.needle) {
+			return r.label, true
+		}
+	}
+	repo := img
+	if i := strings.LastIndex(repo, "/"); i >= 0 {
+		repo = repo[i+1:]
+	}
+	if i := strings.IndexAny(repo, ":@"); i >= 0 {
+		repo = repo[:i]
+	}
+	if label, ok := agentRuntimeRepoNames[repo]; ok {
+		return label, true
+	}
+	return "", false
 }
 
 func containsAny(s string, needles []string) bool {
@@ -212,20 +581,21 @@ func parseEnvKeys(path string) (EnvFile, error) {
 		return EnvFile{}, err
 	}
 	keys := []EnvKey{}
-	// naive: lines with KEY= , ignore values completely
 	lines := strings.Split(string(b), "\n")
-	re := regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=`)
+	re := regexp.MustCompile(`^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=(.*)`)
 	for i, ln := range lines {
 		m := re.FindStringSubmatch(ln)
 		if m != nil {
 			k := m[1]
-			// only collect likely secret names, but per spec we collect token key names
+			v := strings.TrimSpace(m[2])
+			v = strings.Trim(v, `"'`)
 			if LooksLikeSecretKeyName(k) {
-				keys = append(keys, EnvKey{Name: k, Line: i + 1})
+				keys = append(keys, EnvKey{Name: k, Line: i + 1, ValuePattern: LooksLikeSecretValue(v)})
+			} else if pat := LooksLikeSecretValue(v); pat != "" {
+				keys = append(keys, EnvKey{Name: k, Line: i + 1, ValuePattern: pat})
 			}
 		}
 	}
-	// Path will be made relative by caller (WalkAndCollect) for consistency with compose files
 	return EnvFile{Path: path, Keys: keys}, nil
 }
 
@@ -237,6 +607,80 @@ func LooksLikeSecretKeyName(k string) bool {
 	return strings.Contains(uk, "TOKEN") || strings.Contains(uk, "KEY") || strings.Contains(uk, "SECRET") ||
 		strings.Contains(uk, "PASS") || strings.Contains(uk, "API") || strings.Contains(uk, "HF_") ||
 		strings.Contains(uk, "AUTH")
+}
+
+// LooksLikeSecretValue reports whether a value matches a known secret
+// pattern. Returns the pattern name if matched, empty string otherwise.
+// The actual value is never stored in findings.
+func LooksLikeSecretValue(v string) string {
+	if v == "" || v == "changeme" || v == "TODO" || v == "placeholder" {
+		return ""
+	}
+	prefixes := []struct {
+		prefix  string
+		pattern string
+	}{
+		{"sk-", "sk- prefix (OpenAI/Stripe)"},
+		{"sk_live_", "sk_live_ prefix (Stripe live)"},
+		{"rk_live_", "rk_live_ prefix (Stripe restricted)"},
+		{"pk_live_", "pk_live_ prefix (Stripe publishable)"},
+		{"ghp_", "ghp_ prefix (GitHub PAT)"},
+		{"ghs_", "ghs_ prefix (GitHub App)"},
+		{"gho_", "gho_ prefix (GitHub OAuth)"},
+		{"github_pat_", "github_pat_ prefix"},
+		{"glpat-", "glpat- prefix (GitLab PAT)"},
+		{"xoxb-", "xoxb- prefix (Slack bot)"},
+		{"xoxp-", "xoxp- prefix (Slack user)"},
+		{"xapp-", "xapp- prefix (Slack app)"},
+		{"AKIA", "AKIA prefix (AWS access key)"},
+		{"whsec_", "whsec_ prefix (webhook secret)"},
+		{"hf_", "hf_ prefix (Hugging Face)"},
+		{"eyJ", "eyJ prefix (JWT/base64 token)"},
+		{"shpat_", "shpat_ prefix (Shopify)"},
+		{"sq0atp-", "sq0atp- prefix (Square)"},
+		{"SG.", "SG. prefix (SendGrid)"},
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(v, p.prefix) {
+			return p.pattern
+		}
+	}
+	if isHexString(v) && len(v) >= 32 {
+		return "hex string >=32 chars"
+	}
+	if isBase64Like(v) && len(v) >= 20 {
+		return "base64-like string >=20 chars"
+	}
+	return ""
+}
+
+func isHexString(s string) bool {
+	if len(s) < 32 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func isBase64Like(s string) bool {
+	if len(s) < 20 {
+		return false
+	}
+	alphaNum := 0
+	for _, c := range s {
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=' || c == '-' || c == '_' {
+			if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+				alphaNum++
+			}
+		} else {
+			return false
+		}
+	}
+	return float64(alphaNum)/float64(len(s)) > 0.7
 }
 
 func dedup(ss []string) []string {
@@ -261,4 +705,13 @@ func dedupInts(is []int) []int {
 		}
 	}
 	return out
+}
+
+func hasChartYAML(dir string) bool {
+	for _, name := range []string{"Chart.yaml", "Chart.yml"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
