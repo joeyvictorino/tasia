@@ -438,6 +438,10 @@ func Run(args []string) error {
 		return runSwapusage(args[1:])
 	case "loginjection":
 		return runLoginjection(args[1:])
+	case "certexpiry":
+		return runCertexpiry(args[1:])
+	case "stdinopen":
+		return runStdinopen(args[1:])
 	case "coredump":
 		return runCoredump(args[1:])
 	case "completions", "completion":

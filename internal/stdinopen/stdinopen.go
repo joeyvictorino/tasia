@@ -1,6 +1,7 @@
 package stdinopen
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -175,4 +176,9 @@ func FormatText(r Report) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func FormatJSON(r Report) string {
+	data, _ := json.MarshalIndent(r, "", "  ")
+	return string(data) + "\n"
 }

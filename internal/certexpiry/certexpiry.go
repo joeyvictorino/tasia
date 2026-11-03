@@ -1,6 +1,7 @@
 package certexpiry
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -158,6 +159,38 @@ func analyzeService(svc compose.Service, file string) ServiceResult {
 	}
 
 	return sr
+}
+
+func FormatText(r Report) string {
+	var sb strings.Builder
+	sb.WriteString("Certificate & TLS Configuration Analysis\n")
+	sb.WriteString(strings.Repeat("=", 50) + "\n\n")
+	fmt.Fprintf(&sb, "  Path:                %s\n", r.Path)
+	fmt.Fprintf(&sb, "  Services:            %d\n", r.Summary.TotalServices)
+	fmt.Fprintf(&sb, "  Findings:            %d\n", r.Summary.TotalFindings)
+	fmt.Fprintf(&sb, "  Self-signed certs:   %d\n", r.Summary.SelfSignedCerts)
+	fmt.Fprintf(&sb, "  Cert mount writable: %d\n", r.Summary.CertMountNoRotate)
+	fmt.Fprintf(&sb, "  TLS disabled:        %d\n", r.Summary.TLSDisabled)
+	fmt.Fprintf(&sb, "  Weak TLS version:    %d\n", r.Summary.WeakTLSVersion)
+	fmt.Fprintf(&sb, "  Cert path exposed:   %d\n", r.Summary.CertPathExposed)
+	fmt.Fprintf(&sb, "  No cert validation:  %d\n\n", r.Summary.NoCertValidation)
+
+	for _, svc := range r.Services {
+		if len(svc.Findings) == 0 {
+			continue
+		}
+		fmt.Fprintf(&sb, "  Service: %s (%s)\n", svc.Service, svc.File)
+		for _, f := range svc.Findings {
+			fmt.Fprintf(&sb, "    [%s] %s\n", f.Level, f.Message)
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
+func FormatJSON(r Report) string {
+	data, _ := json.MarshalIndent(r, "", "  ")
+	return string(data) + "\n"
 }
 
 func summarize(services []ServiceResult) Summary {
