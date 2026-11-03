@@ -530,6 +530,10 @@ func Run(args []string) error {
 		return runSigverify(args[1:])
 	case "execguard":
 		return runExecguard(args[1:])
+	case "overlayfs":
+		return runOverlayfs(args[1:])
+	case "nonroot":
+		return runNonroot(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
