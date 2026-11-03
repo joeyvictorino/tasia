@@ -450,6 +450,10 @@ func Run(args []string) error {
 		return runDepguard(args[1:])
 	case "cmdinject":
 		return runCmdinject(args[1:])
+	case "proxyconfig":
+		return runProxyconfig(args[1:])
+	case "backupexpose":
+		return runBackupexpose(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
