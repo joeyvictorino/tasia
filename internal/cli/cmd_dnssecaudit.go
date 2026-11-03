@@ -18,16 +18,13 @@ func runDnssecaudit(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-
 	if *recursive {
 		return runDnssecauditRecursive(*path, *format)
 	}
-
 	c, err := collect.WalkAndCollect(*path)
 	if err != nil {
 		return fmt.Errorf("dnssecaudit: %w", err)
 	}
-
 	r := dnssecaudit.Analyze(c)
 	printDnssecauditResult(r, *format)
 	return nil

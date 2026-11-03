@@ -574,6 +574,8 @@ func Run(args []string) error {
 		return runSshaudit(args[1:])
 	case "dnssecaudit":
 		return runDnssecaudit(args[1:])
+	case "nfsaudit":
+		return runNfsaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
