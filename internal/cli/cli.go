@@ -502,6 +502,10 @@ func Run(args []string) error {
 		return runVxlan(args[1:])
 	case "macvlan":
 		return runMacvlan(args[1:])
+	case "bridgeaudit":
+		return runBridgeaudit(args[1:])
+	case "mcastaudit":
+		return runMcastaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
