@@ -436,6 +436,8 @@ func Run(args []string) error {
 		return runDnsleak(args[1:])
 	case "swapusage":
 		return runSwapusage(args[1:])
+	case "loginjection":
+		return runLoginjection(args[1:])
 	case "coredump":
 		return runCoredump(args[1:])
 	case "completions", "completion":
