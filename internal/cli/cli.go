@@ -514,6 +514,10 @@ func Run(args []string) error {
 		return runGrpcaudit(args[1:])
 	case "tlsversion":
 		return runTlsversion(args[1:])
+	case "webhooksec":
+		return runWebhooksec(args[1:])
+	case "jwtsec":
+		return runJwtsec(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
