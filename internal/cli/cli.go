@@ -526,6 +526,10 @@ func Run(args []string) error {
 		return runSsrfaudit(args[1:])
 	case "headerinjection":
 		return runHeaderinjection(args[1:])
+	case "sigverify":
+		return runSigverify(args[1:])
+	case "execguard":
+		return runExecguard(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
