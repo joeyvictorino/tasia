@@ -490,6 +490,10 @@ func Run(args []string) error {
 		return runAffinity(args[1:])
 	case "linklocal":
 		return runLinklocal(args[1:])
+	case "netalias":
+		return runNetalias(args[1:])
+	case "extnet":
+		return runExtnet(args[1:])
 	case "cgroupescape":
 		return runCgroupescape(args[1:])
 	case "timesync":
