@@ -390,6 +390,10 @@ func Run(args []string) error {
 		return runIpcaudit(args[1:])
 	case "procmount":
 		return runProcmount(args[1:])
+	case "cgroupquota":
+		return runCgroupquota(args[1:])
+	case "tmpexec":
+		return runTmpexec(args[1:])
 	case "pidlimit":
 		return runPidlimit(args[1:])
 	case "swaplimit":
