@@ -20,12 +20,11 @@ type ServiceResult struct {
 }
 
 type Summary struct {
-	NoAuth       int `json:"no_auth"`
-	NoTLS        int `json:"no_tls"`
-	NoEncryption int `json:"no_encryption"`
-	ExposedPort  int `json:"exposed_port"`
+	NoAuth          int `json:"no_auth"`
+	NoTLS           int `json:"no_tls"`
+	ExposedPort     int `json:"exposed_port"`
 	DefaultPassword int `json:"default_password"`
-	JMXEnabled   int `json:"jmx_enabled"`
+	JMXExposed      int `json:"jmx_exposed"`
 }
 
 type Report struct {
@@ -35,8 +34,7 @@ type Report struct {
 }
 
 var cassandraImages = []string{
-	"cassandra", "bitnami/cassandra", "datastax/dse-server",
-	"scylladb/scylla", "datastax/cassandra",
+	"cassandra", "bitnami/cassandra",
 }
 
 func isCassandraImage(image string) bool {
@@ -52,11 +50,19 @@ func isCassandraImage(image string) bool {
 func hasAuth(envs []string) bool {
 	for _, e := range envs {
 		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "CASSANDRA_AUTHENTICATOR") && !strings.Contains(upper, "ALLOWALL") {
+		if strings.Contains(upper, "CASSANDRA_AUTHENTICATOR=ALLOWALLAUTHENTICATOR") {
+			return false
+		}
+		if strings.Contains(upper, "CASSANDRA_AUTHORIZER=ALLOWALLAUTHORIZER") {
+			return false
+		}
+	}
+	for _, e := range envs {
+		upper := strings.ToUpper(e)
+		if strings.Contains(upper, "CASSANDRA_AUTHENTICATOR=PASSWORDAUTHENTICATOR") {
 			return true
 		}
-		if strings.Contains(upper, "CASSANDRA_PASSWORD") ||
-			strings.Contains(upper, "CASSANDRA_AUTH_ENABLED=TRUE") {
+		if strings.Contains(upper, "CASSANDRA_PASSWORD=") {
 			return true
 		}
 	}
@@ -66,23 +72,11 @@ func hasAuth(envs []string) bool {
 func hasTLS(envs []string) bool {
 	for _, e := range envs {
 		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "CLIENT_ENCRYPTION_ENABLED=TRUE") ||
-			strings.Contains(upper, "NATIVE_TRANSPORT_PORT_SSL") ||
-			strings.Contains(upper, "CLIENT_ENCRYPTION_OPTIONS") && strings.Contains(upper, "ENABLED=TRUE") ||
-			strings.Contains(upper, "SSL_STORAGE_PORT") {
-			return true
-		}
-	}
-	return false
-}
-
-func hasInternodeEncryption(envs []string) bool {
-	for _, e := range envs {
-		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "INTERNODE_ENCRYPTION=ALL") ||
-			strings.Contains(upper, "INTERNODE_ENCRYPTION=DC") ||
-			strings.Contains(upper, "INTERNODE_ENCRYPTION=RACK") ||
-			strings.Contains(upper, "SERVER_ENCRYPTION_ENABLED=TRUE") {
+		if strings.Contains(upper, "CASSANDRA_CLIENT_ENCRYPTION") ||
+			strings.Contains(upper, "CASSANDRA_SSL") ||
+			strings.Contains(upper, "CASSANDRA_INTERNODE_ENCRYPTION") ||
+			strings.Contains(upper, "CASSANDRA_TRUSTSTORE") ||
+			strings.Contains(upper, "CASSANDRA_KEYSTORE") {
 			return true
 		}
 	}
@@ -90,12 +84,21 @@ func hasInternodeEncryption(envs []string) bool {
 }
 
 func hasDefaultPassword(envs []string) bool {
-	defaults := []string{"cassandra", "admin", "password", "changeme", "default"}
+	defaults := []string{"cassandra", "admin", "password", "changeme", "default", "test"}
 	for _, e := range envs {
 		lower := strings.ToLower(e)
-		if strings.Contains(lower, "cassandra_password=") || strings.Contains(lower, "password=") {
+		if strings.HasPrefix(lower, "cassandra_password=") {
+			pw := strings.TrimPrefix(lower, "cassandra_password=")
 			for _, d := range defaults {
-				if strings.HasSuffix(lower, "="+d) {
+				if pw == d {
+					return true
+				}
+			}
+		}
+		if strings.HasPrefix(lower, "cassandra_password_seeder=") {
+			pw := strings.TrimPrefix(lower, "cassandra_password_seeder=")
+			for _, d := range defaults {
+				if pw == d {
 					return true
 				}
 			}
@@ -105,15 +108,15 @@ func hasDefaultPassword(envs []string) bool {
 }
 
 func hasJMXExposed(envs []string, ports []compose.PortMapping) bool {
-	for _, e := range envs {
-		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "JMX_PORT") ||
-			strings.Contains(upper, "JMX_REMOTE_AUTHENTICATE=FALSE") {
-			return true
-		}
-	}
 	for _, p := range ports {
 		if p.TargetPort == 7199 && p.IsAllInterfaces() {
+			for _, e := range envs {
+				upper := strings.ToUpper(e)
+				if strings.Contains(upper, "LOCAL_JMX=NO") ||
+					strings.Contains(upper, "JMX_PORT=") {
+					return true
+				}
+			}
 			return true
 		}
 	}
@@ -126,9 +129,9 @@ func analyzeService(svc compose.Service) ServiceResult {
 
 	if !hasAuth(envs) {
 		sr.Findings = append(sr.Findings, Finding{
-			Level:   "high",
+			Level:   "critical",
 			Rule:    "cassandra_no_auth",
-			Message: fmt.Sprintf("service %q: Cassandra has no authentication configured", svc.Name),
+			Message: fmt.Sprintf("service %q: Cassandra authentication disabled or not configured", svc.Name),
 		})
 	}
 
@@ -136,24 +139,14 @@ func analyzeService(svc compose.Service) ServiceResult {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "high",
 			Rule:    "cassandra_no_tls",
-			Message: fmt.Sprintf("service %q: Cassandra running without TLS for client connections", svc.Name),
-		})
-	}
-
-	if !hasInternodeEncryption(envs) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "medium",
-			Rule:    "cassandra_no_internode_encryption",
-			Message: fmt.Sprintf("service %q: Cassandra internode encryption not configured", svc.Name),
+			Message: fmt.Sprintf("service %q: Cassandra running without TLS encryption", svc.Name),
 		})
 	}
 
 	exposedPorts := map[int]string{
-		9042: "Cassandra native transport (CQL)",
-		9160: "Cassandra Thrift (legacy)",
-		7000: "Cassandra internode cluster",
-		7001: "Cassandra internode SSL",
-		7199: "Cassandra JMX",
+		9042: "CQL native transport",
+		7199: "JMX monitoring",
+		9160: "Thrift client",
 	}
 	for _, p := range svc.Ports {
 		if desc, ok := exposedPorts[p.TargetPort]; ok {
@@ -177,9 +170,9 @@ func analyzeService(svc compose.Service) ServiceResult {
 
 	if hasJMXExposed(envs, svc.Ports) {
 		sr.Findings = append(sr.Findings, Finding{
-			Level:   "high",
+			Level:   "critical",
 			Rule:    "cassandra_jmx_exposed",
-			Message: fmt.Sprintf("service %q: Cassandra JMX exposed or unauthenticated", svc.Name),
+			Message: fmt.Sprintf("service %q: JMX monitoring exposed on all interfaces", svc.Name),
 		})
 	}
 
@@ -201,14 +194,12 @@ func Analyze(c *collect.Collected) Report {
 					r.Summary.NoAuth++
 				case "cassandra_no_tls":
 					r.Summary.NoTLS++
-				case "cassandra_no_internode_encryption":
-					r.Summary.NoEncryption++
 				case "cassandra_exposed_port":
 					r.Summary.ExposedPort++
 				case "cassandra_default_password":
 					r.Summary.DefaultPassword++
 				case "cassandra_jmx_exposed":
-					r.Summary.JMXEnabled++
+					r.Summary.JMXExposed++
 				}
 			}
 		}
@@ -238,9 +229,9 @@ func FormatText(r Report) string {
 		b.WriteString("\n")
 	}
 
-	fmt.Fprintf(&b, "  Summary: no_auth=%d no_tls=%d no_encryption=%d exposed_port=%d default_password=%d jmx_enabled=%d\n",
-		r.Summary.NoAuth, r.Summary.NoTLS, r.Summary.NoEncryption,
-		r.Summary.ExposedPort, r.Summary.DefaultPassword, r.Summary.JMXEnabled)
+	fmt.Fprintf(&b, "  Summary: no_auth=%d no_tls=%d exposed_port=%d default_password=%d jmx_exposed=%d\n",
+		r.Summary.NoAuth, r.Summary.NoTLS, r.Summary.ExposedPort,
+		r.Summary.DefaultPassword, r.Summary.JMXExposed)
 
 	return b.String()
 }

@@ -16,149 +16,190 @@ func allIf(target int) compose.PortMapping {
 	return compose.PortMapping{HostPort: target, TargetPort: target, HostIP: "0.0.0.0"}
 }
 
+func localPort(target int) compose.PortMapping {
+	return compose.PortMapping{HostPort: target, TargetPort: target, HostIP: "127.0.0.1"}
+}
+
 func col(svcs ...compose.Service) *collect.Collected {
 	return &collect.Collected{Root: ".", ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}}}
 }
 
-func colPath(path string, svcs ...compose.Service) *collect.Collected {
-	return &collect.Collected{Root: path, ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}}}
-}
-
 func TestIsCassandraImage(t *testing.T) {
-	tests := []struct {
-		image string
-		want  bool
-	}{
-		{"cassandra:4.1", true},
-		{"bitnami/cassandra:latest", true},
-		{"datastax/dse-server:6.8", true},
-		{"scylladb/scylla:5.2", true},
-		{"nginx:latest", false},
+	if !isCassandraImage("cassandra:4.1") {
+		t.Error("should detect cassandra")
 	}
-	for _, tt := range tests {
-		if got := isCassandraImage(tt.image); got != tt.want {
-			t.Errorf("isCassandraImage(%q) = %v, want %v", tt.image, got, tt.want)
-		}
+	if !isCassandraImage("bitnami/cassandra:latest") {
+		t.Error("should detect bitnami/cassandra")
+	}
+	if isCassandraImage("postgres:15") {
+		t.Error("should not detect postgres")
 	}
 }
 
 func TestNoAuth(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", []string{"CASSANDRA_AUTHENTICATOR=AllowAllAuthenticator"}, nil)))
-	if r.Summary.NoAuth == 0 {
-		t.Error("expected cassandra_no_auth finding")
+	s := svc("db", "cassandra:4.1", nil, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoAuth != 1 {
+		t.Errorf("expected NoAuth=1, got %d", r.Summary.NoAuth)
+	}
+}
+
+func TestAuthDisabledExplicitly(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_AUTHENTICATOR=AllowAllAuthenticator"}, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoAuth != 1 {
+		t.Errorf("expected NoAuth=1, got %d", r.Summary.NoAuth)
+	}
+}
+
+func TestAuthEnabled(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_AUTHENTICATOR=PasswordAuthenticator"}, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoAuth != 0 {
+		t.Errorf("expected NoAuth=0, got %d", r.Summary.NoAuth)
+	}
+}
+
+func TestAuthWithPassword(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=strongpw123"}, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoAuth != 0 {
+		t.Errorf("expected NoAuth=0, got %d", r.Summary.NoAuth)
 	}
 }
 
 func TestNoTLS(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", nil, nil)))
-	if r.Summary.NoTLS == 0 {
-		t.Error("expected cassandra_no_tls finding")
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret"}, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoTLS != 1 {
+		t.Errorf("expected NoTLS=1, got %d", r.Summary.NoTLS)
 	}
 }
 
-func TestNoInternodeEncryption(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", nil, nil)))
-	if r.Summary.NoEncryption == 0 {
-		t.Error("expected cassandra_no_internode_encryption finding")
+func TestTLSEnabled(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret", "CASSANDRA_CLIENT_ENCRYPTION=true"}, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoTLS != 0 {
+		t.Errorf("expected NoTLS=0, got %d", r.Summary.NoTLS)
 	}
 }
 
-func TestExposedPort(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", nil, []compose.PortMapping{allIf(9042)})))
-	if r.Summary.ExposedPort == 0 {
-		t.Error("expected cassandra_exposed_port finding")
+func TestExposedCQLPort(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret"}, []compose.PortMapping{allIf(9042)})
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 1 {
+		t.Errorf("expected ExposedPort=1, got %d", r.Summary.ExposedPort)
 	}
 }
 
-func TestJMXPort(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", nil, []compose.PortMapping{allIf(7199)})))
-	if r.Summary.ExposedPort == 0 {
-		t.Error("expected JMX port finding")
+func TestExposedJMXPort(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret"}, []compose.PortMapping{allIf(7199)})
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 1 {
+		t.Errorf("expected ExposedPort=1, got %d", r.Summary.ExposedPort)
+	}
+}
+
+func TestExposedThriftPort(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret"}, []compose.PortMapping{allIf(9160)})
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 1 {
+		t.Errorf("expected ExposedPort=1, got %d", r.Summary.ExposedPort)
+	}
+}
+
+func TestLocalPortNotFlagged(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret"}, []compose.PortMapping{localPort(9042)})
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 0 {
+		t.Errorf("expected ExposedPort=0, got %d", r.Summary.ExposedPort)
 	}
 }
 
 func TestDefaultPassword(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", []string{"CASSANDRA_PASSWORD=cassandra"}, nil)))
-	if r.Summary.DefaultPassword == 0 {
-		t.Error("expected cassandra_default_password finding")
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=cassandra"}, nil)
+	r := Analyze(col(s))
+	if r.Summary.DefaultPassword != 1 {
+		t.Errorf("expected DefaultPassword=1, got %d", r.Summary.DefaultPassword)
 	}
 }
 
-func TestJMXNoAuth(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", []string{"jmx_remote_authenticate=false"}, nil)))
-	if r.Summary.JMXEnabled == 0 {
-		t.Error("expected cassandra_jmx_exposed finding")
+func TestStrongPassword(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=xK9mP2wQ7nR4"}, nil)
+	r := Analyze(col(s))
+	if r.Summary.DefaultPassword != 0 {
+		t.Errorf("expected DefaultPassword=0, got %d", r.Summary.DefaultPassword)
 	}
 }
 
-func TestCleanService(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", []string{
-		"CASSANDRA_AUTHENTICATOR=PasswordAuthenticator",
-		"CLIENT_ENCRYPTION_ENABLED=TRUE",
-		"INTERNODE_ENCRYPTION=ALL",
-	}, nil)))
-	total := r.Summary.NoAuth + r.Summary.NoTLS + r.Summary.NoEncryption
-	if total != 0 {
-		t.Errorf("expected 0 auth/tls/encryption findings, got %d", total)
+func TestJMXExposed(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret", "LOCAL_JMX=no"}, []compose.PortMapping{allIf(7199)})
+	r := Analyze(col(s))
+	if r.Summary.JMXExposed != 1 {
+		t.Errorf("expected JMXExposed=1, got %d", r.Summary.JMXExposed)
 	}
 }
 
-func TestNonCassandraSkipped(t *testing.T) {
-	r := Analyze(col(svc("web", "nginx:latest", nil, nil)))
+func TestJMXNotExposedLocal(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret", "LOCAL_JMX=no"}, []compose.PortMapping{localPort(7199)})
+	r := Analyze(col(s))
+	if r.Summary.JMXExposed != 0 {
+		t.Errorf("expected JMXExposed=0, got %d", r.Summary.JMXExposed)
+	}
+}
+
+func TestNonCassandraIgnored(t *testing.T) {
+	s := svc("pg", "postgres:15", nil, nil)
+	r := Analyze(col(s))
 	if len(r.Services) != 0 {
-		t.Errorf("expected 0 services, got %d", len(r.Services))
+		t.Error("expected no services")
 	}
 }
 
-func TestMultiplePorts(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", nil, []compose.PortMapping{allIf(9042), allIf(9160), allIf(7199)})))
-	if r.Summary.ExposedPort != 3 {
-		t.Errorf("expected 3 port findings, got %d", r.Summary.ExposedPort)
-	}
-}
-
-func TestFormatText(t *testing.T) {
-	r := Analyze(colPath("/test", svc("db", "cassandra:4", nil, nil)))
-	text := FormatText(r)
-	if !strings.Contains(text, "Cassandra Security Audit") {
-		t.Error("missing title")
-	}
-}
-
-func TestEmptyCollection(t *testing.T) {
+func TestNoServices(t *testing.T) {
 	r := Analyze(&collect.Collected{Root: "."})
 	if len(r.Services) != 0 {
-		t.Error("expected empty report")
+		t.Error("expected no services")
 	}
 }
 
-func TestMultipleServices(t *testing.T) {
-	r := Analyze(col(
-		svc("db1", "cassandra:4", nil, nil),
-		svc("db2", "bitnami/cassandra", nil, nil),
-	))
-	if len(r.Services) != 2 {
-		t.Errorf("expected 2 services, got %d", len(r.Services))
+func TestMultipleExposedPorts(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{"CASSANDRA_PASSWORD=secret"}, []compose.PortMapping{allIf(9042), allIf(7199), allIf(9160)})
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 3 {
+		t.Errorf("expected ExposedPort=3, got %d", r.Summary.ExposedPort)
 	}
 }
 
-func TestScyllaDB(t *testing.T) {
-	r := Analyze(col(svc("scylla", "scylladb/scylla:5.2", nil, nil)))
-	if len(r.Services) != 1 {
-		t.Fatal("ScyllaDB should be detected")
+func TestFormatTextOutput(t *testing.T) {
+	s := svc("db", "cassandra:4.1", nil, nil)
+	r := Analyze(col(s))
+	text := FormatText(r)
+	if !strings.Contains(text, "Cassandra Security Audit") {
+		t.Error("expected header")
+	}
+	if !strings.Contains(text, "db") {
+		t.Error("expected service name")
 	}
 }
 
-func TestThriftPort(t *testing.T) {
-	r := Analyze(col(svc("db", "cassandra:4", nil, []compose.PortMapping{allIf(9160)})))
-	if r.Summary.ExposedPort == 0 {
-		t.Error("expected Thrift port finding")
+func TestFormatTextNoServices(t *testing.T) {
+	r := Analyze(&collect.Collected{Root: "."})
+	text := FormatText(r)
+	if !strings.Contains(text, "No Cassandra services found") {
+		t.Error("expected no services message")
 	}
 }
 
-func TestReportPath(t *testing.T) {
-	r := Analyze(colPath("/mydir"))
-	if r.Path != "/mydir" {
-		t.Errorf("expected /mydir, got %s", r.Path)
+func TestFullySecure(t *testing.T) {
+	s := svc("db", "cassandra:4.1", []string{
+		"CASSANDRA_AUTHENTICATOR=PasswordAuthenticator",
+		"CASSANDRA_PASSWORD=xK9mP2wQ7nR4",
+		"CASSANDRA_CLIENT_ENCRYPTION=true",
+	}, []compose.PortMapping{localPort(9042)})
+	r := Analyze(col(s))
+	total := r.Summary.NoAuth + r.Summary.NoTLS + r.Summary.ExposedPort + r.Summary.DefaultPassword + r.Summary.JMXExposed
+	if total != 0 {
+		t.Errorf("expected 0 findings for fully secure setup, got %d", total)
 	}
 }

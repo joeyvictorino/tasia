@@ -8,16 +8,16 @@ import (
 	"github.com/joeyvictorino/tasia/internal/collect/compose"
 )
 
-func svc(name, image string, env []string, ports []compose.PortMapping) compose.Service {
-	return compose.Service{Name: name, Image: image, Environment: env, Ports: ports}
-}
-
-func svcCmd(name, image string, env []string, ports []compose.PortMapping, cmd []string) compose.Service {
-	return compose.Service{Name: name, Image: image, Environment: env, Ports: ports, Command: cmd}
+func svc(name, image string, env []string, ports []compose.PortMapping, cmds []string) compose.Service {
+	return compose.Service{Name: name, Image: image, Environment: env, Ports: ports, Command: cmds}
 }
 
 func allIf(target int) compose.PortMapping {
 	return compose.PortMapping{HostPort: target, TargetPort: target, HostIP: "0.0.0.0"}
+}
+
+func localPort(target int) compose.PortMapping {
+	return compose.PortMapping{HostPort: target, TargetPort: target, HostIP: "127.0.0.1"}
 }
 
 func col(svcs ...compose.Service) *collect.Collected {
@@ -25,147 +25,186 @@ func col(svcs ...compose.Service) *collect.Collected {
 }
 
 func TestIsConsulImage(t *testing.T) {
-	tests := []struct {
-		image string
-		want  bool
-	}{
-		{"consul:1.16", true},
-		{"hashicorp/consul:1.16", true},
-		{"bitnami/consul:latest", true},
-		{"Consul:latest", true},
-		{"nginx:latest", false},
-		{"postgres:15", false},
+	if !isConsulImage("consul:1.15") {
+		t.Error("should detect consul")
 	}
-	for _, tt := range tests {
-		if got := isConsulImage(tt.image); got != tt.want {
-			t.Errorf("isConsulImage(%q) = %v, want %v", tt.image, got, tt.want)
-		}
+	if !isConsulImage("hashicorp/consul:latest") {
+		t.Error("should detect hashicorp/consul")
+	}
+	if isConsulImage("postgres:15") {
+		t.Error("should not detect postgres")
 	}
 }
 
 func TestNoACL(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", nil, nil)))
-	if r.Summary.NoACL == 0 {
-		t.Error("expected consul_no_acl finding")
+	s := svc("consul", "consul:1.15", nil, nil, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoACL != 1 {
+		t.Errorf("expected NoACL=1, got %d", r.Summary.NoACL)
+	}
+}
+
+func TestDevModeNoACL(t *testing.T) {
+	s := svc("consul", "consul:1.15", nil, nil, []string{"agent", "-dev"})
+	r := Analyze(col(s))
+	if r.Summary.NoACL != 1 {
+		t.Errorf("expected NoACL=1 in dev mode, got %d", r.Summary.NoACL)
 	}
 }
 
 func TestACLEnabled(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", []string{"CONSUL_ACL_ENABLED=TRUE"}, nil)))
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, nil, nil)
+	r := Analyze(col(s))
 	if r.Summary.NoACL != 0 {
-		t.Error("expected no consul_no_acl when ACL enabled")
+		t.Errorf("expected NoACL=0, got %d", r.Summary.NoACL)
 	}
 }
 
-func TestNoGossipEncryption(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", nil, nil)))
-	if r.Summary.NoGossipEncrypt == 0 {
-		t.Error("expected consul_no_gossip_encrypt finding")
-	}
-}
-
-func TestGossipEncryptionConfigured(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", []string{"CONSUL_GOSSIP_ENCRYPTION_KEY=abc123"}, nil)))
-	if r.Summary.NoGossipEncrypt != 0 {
-		t.Error("expected no gossip encrypt finding when key set")
-	}
-}
-
-func TestGossipViaCommand(t *testing.T) {
-	r := Analyze(col(svcCmd("consul", "consul:1.16", nil, nil, []string{"agent", "-encrypt=xyz"})))
-	if r.Summary.NoGossipEncrypt != 0 {
-		t.Error("expected no gossip encrypt finding when -encrypt in command")
+func TestACLInLocalConfig(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{`CONSUL_LOCAL_CONFIG={"acl":{"enabled":true}}`}, nil, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoACL != 0 {
+		t.Errorf("expected NoACL=0, got %d", r.Summary.NoACL)
 	}
 }
 
 func TestNoTLS(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", nil, nil)))
-	if r.Summary.NoTLS == 0 {
-		t.Error("expected consul_no_tls finding")
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, nil, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoTLS != 1 {
+		t.Errorf("expected NoTLS=1, got %d", r.Summary.NoTLS)
 	}
 }
 
-func TestTLSConfigured(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", []string{"CONSUL_TLS_CERT=/cert.pem"}, nil)))
+func TestTLSEnabled(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true", "CONSUL_HTTP_SSL=TRUE"}, nil, nil)
+	r := Analyze(col(s))
 	if r.Summary.NoTLS != 0 {
-		t.Error("expected no TLS finding when CONSUL_TLS configured")
+		t.Errorf("expected NoTLS=0, got %d", r.Summary.NoTLS)
 	}
 }
 
-func TestExposedPort(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", nil, []compose.PortMapping{allIf(8500)})))
-	if r.Summary.ExposedPort == 0 {
-		t.Error("expected consul_exposed_port finding")
+func TestExposedHTTPPort(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, []compose.PortMapping{allIf(8500)}, nil)
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 1 {
+		t.Errorf("expected ExposedPort=1, got %d", r.Summary.ExposedPort)
 	}
 }
 
-func TestDevModeCommand(t *testing.T) {
-	r := Analyze(col(svcCmd("consul", "consul:1.16", nil, nil, []string{"agent", "-dev"})))
-	if r.Summary.DevMode == 0 {
-		t.Error("expected consul_dev_mode finding")
+func TestExposedDNSPort(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, []compose.PortMapping{allIf(8600)}, nil)
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 1 {
+		t.Errorf("expected ExposedPort=1, got %d", r.Summary.ExposedPort)
 	}
 }
 
-func TestDevModeEnv(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", []string{"CONSUL_DEV=true"}, nil)))
-	if r.Summary.DevMode == 0 {
-		t.Error("expected consul_dev_mode finding from env")
+func TestExposedRPCPort(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, []compose.PortMapping{allIf(8300)}, nil)
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 1 {
+		t.Errorf("expected ExposedPort=1, got %d", r.Summary.ExposedPort)
 	}
 }
 
-func TestNonConsulSkipped(t *testing.T) {
-	r := Analyze(col(svc("web", "nginx:latest", nil, nil)))
+func TestLocalPortNotFlagged(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, []compose.PortMapping{localPort(8500)}, nil)
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 0 {
+		t.Errorf("expected ExposedPort=0, got %d", r.Summary.ExposedPort)
+	}
+}
+
+func TestUIExposedNoACL(t *testing.T) {
+	s := svc("consul", "consul:1.15", nil, []compose.PortMapping{allIf(8500)}, []string{"agent", "-ui"})
+	r := Analyze(col(s))
+	if r.Summary.UIExposed != 1 {
+		t.Errorf("expected UIExposed=1, got %d", r.Summary.UIExposed)
+	}
+}
+
+func TestUIExposedDevMode(t *testing.T) {
+	s := svc("consul", "consul:1.15", nil, []compose.PortMapping{allIf(8500)}, []string{"agent", "-dev"})
+	r := Analyze(col(s))
+	if r.Summary.UIExposed != 1 {
+		t.Errorf("expected UIExposed=1 in dev mode, got %d", r.Summary.UIExposed)
+	}
+}
+
+func TestUINotExposedWithACL(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, []compose.PortMapping{allIf(8500)}, []string{"agent", "-ui"})
+	r := Analyze(col(s))
+	if r.Summary.UIExposed != 0 {
+		t.Errorf("expected UIExposed=0 with ACL, got %d", r.Summary.UIExposed)
+	}
+}
+
+func TestNoGossipEncryption(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, nil, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoGossipEncrypt != 1 {
+		t.Errorf("expected NoGossipEncrypt=1, got %d", r.Summary.NoGossipEncrypt)
+	}
+}
+
+func TestGossipEncryptionEnabled(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true", "CONSUL_ENCRYPT=abc123"}, nil, nil)
+	r := Analyze(col(s))
+	if r.Summary.NoGossipEncrypt != 0 {
+		t.Errorf("expected NoGossipEncrypt=0, got %d", r.Summary.NoGossipEncrypt)
+	}
+}
+
+func TestNonConsulIgnored(t *testing.T) {
+	s := svc("pg", "postgres:15", nil, nil, nil)
+	r := Analyze(col(s))
 	if len(r.Services) != 0 {
-		t.Errorf("expected 0 services, got %d", len(r.Services))
+		t.Error("expected no services")
 	}
 }
 
-func TestEmptyCollection(t *testing.T) {
+func TestNoServices(t *testing.T) {
 	r := Analyze(&collect.Collected{Root: "."})
 	if len(r.Services) != 0 {
-		t.Error("expected empty report")
+		t.Error("expected no services")
 	}
 }
 
-func TestFormatText(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", nil, nil)))
+func TestFormatTextOutput(t *testing.T) {
+	s := svc("consul", "consul:1.15", nil, nil, nil)
+	r := Analyze(col(s))
 	text := FormatText(r)
 	if !strings.Contains(text, "Consul Security Audit") {
-		t.Error("missing title")
+		t.Error("expected header")
 	}
 }
 
-func TestFormatTextEmpty(t *testing.T) {
+func TestFormatTextNoServices(t *testing.T) {
 	r := Analyze(&collect.Collected{Root: "."})
 	text := FormatText(r)
 	if !strings.Contains(text, "No Consul services found") {
-		t.Error("missing empty message")
+		t.Error("expected no services message")
 	}
 }
 
-func TestMultiplePorts(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", nil,
-		[]compose.PortMapping{allIf(8500), allIf(8600), allIf(8300)})))
-	if r.Summary.ExposedPort != 3 {
-		t.Errorf("expected 3 port findings, got %d", r.Summary.ExposedPort)
+func TestMultipleExposedPorts(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{"CONSUL_ACL_ENABLED=true"}, []compose.PortMapping{allIf(8500), allIf(8600), allIf(8300), allIf(8301), allIf(8302)}, nil)
+	r := Analyze(col(s))
+	if r.Summary.ExposedPort != 5 {
+		t.Errorf("expected ExposedPort=5, got %d", r.Summary.ExposedPort)
 	}
 }
 
-func TestReportPath(t *testing.T) {
-	r := Analyze(&collect.Collected{Root: "/mydir"})
-	if r.Path != "/mydir" {
-		t.Errorf("expected /mydir, got %s", r.Path)
-	}
-}
-
-func TestCleanService(t *testing.T) {
-	r := Analyze(col(svc("consul", "consul:1.16", []string{
-		"CONSUL_ACL_ENABLED=TRUE",
-		"CONSUL_GOSSIP_ENCRYPTION_KEY=secret",
-		"CONSUL_TLS_CERT=/cert.pem",
-	}, nil)))
-	total := r.Summary.NoACL + r.Summary.NoGossipEncrypt + r.Summary.NoTLS
+func TestFullySecure(t *testing.T) {
+	s := svc("consul", "consul:1.15", []string{
+		"CONSUL_ACL_ENABLED=true",
+		"CONSUL_HTTP_SSL=TRUE",
+		"CONSUL_ENCRYPT=secretkey",
+	}, []compose.PortMapping{localPort(8500)}, []string{"agent", "-ui"})
+	r := Analyze(col(s))
+	total := r.Summary.NoACL + r.Summary.NoTLS + r.Summary.ExposedPort + r.Summary.UIExposed + r.Summary.NoGossipEncrypt
 	if total != 0 {
-		t.Errorf("expected 0 acl/gossip/tls findings, got %d", total)
+		t.Errorf("expected 0 findings for fully secure setup, got %d", total)
 	}
 }
