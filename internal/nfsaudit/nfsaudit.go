@@ -27,12 +27,12 @@ type Summary struct {
 	TotalServices    int `json:"total_services"`
 	AffectedServices int `json:"affected_services"`
 	TotalFindings    int `json:"total_findings"`
-	NoRootSquash     int `json:"no_root_squash"`
-	InsecurePorts    int `json:"insecure_ports"`
-	MissingKerberos  int `json:"missing_kerberos"`
-	NFSv3NoEncrypt   int `json:"nfsv3_no_encrypt"`
-	ExposedPorts     int `json:"exposed_ports"`
+	NoAuthExport     int `json:"no_auth_export"`
 	WorldReadable    int `json:"world_readable"`
+	NoRootSquash     int `json:"no_root_squash"`
+	InsecurePort     int `json:"insecure_port"`
+	MissingKerberos  int `json:"missing_kerberos"`
+	ExposedPort      int `json:"exposed_port"`
 }
 
 type Report struct {
@@ -41,20 +41,16 @@ type Report struct {
 	Summary Summary         `json:"summary"`
 }
 
-var nfsImages = []string{"nfs", "nfs-server", "nfs-ganesha", "erichough/nfs", "itsthenetwork/nfs"}
-
-func isNFSImage(image string) bool {
-	low := strings.ToLower(image)
-	for _, pat := range nfsImages {
-		if strings.Contains(low, pat) {
-			return true
-		}
+func isNFSService(svc compose.Service) bool {
+	combined := strings.ToLower(svc.Image + " " + strings.Join(svc.Command, " ") + " " + strings.Join(svc.Entrypoint, " "))
+	for _, e := range svc.Environment {
+		combined += " " + strings.ToLower(e)
 	}
-	return false
+	return strings.Contains(combined, "nfs") || strings.Contains(combined, "nfsd") || strings.Contains(combined, "ganesha")
 }
 
 func envMap(svc compose.Service) map[string]string {
-	m := make(map[string]string)
+	m := map[string]string{}
 	for _, e := range svc.Environment {
 		parts := strings.SplitN(e, "=", 2)
 		if len(parts) == 2 {
@@ -66,89 +62,100 @@ func envMap(svc compose.Service) map[string]string {
 
 func hasVolumeContaining(svc compose.Service, needle string) bool {
 	for _, v := range svc.Volumes {
-		if strings.Contains(strings.ToLower(v), strings.ToLower(needle)) {
+		if strings.Contains(strings.ToLower(v), needle) {
 			return true
 		}
 	}
 	return false
 }
 
-func isNFSPort(port int) bool {
-	return port == 2049 || port == 111
-}
-
 func analyzeService(svc compose.Service, file string) ServiceResult {
 	sr := ServiceResult{Service: svc.Name, Image: svc.Image}
-	if !isNFSImage(svc.Image) {
+	if !isNFSService(svc) {
 		return sr
 	}
 
 	env := envMap(svc)
 
-	if v, ok := env["NFS_EXPORT"]; ok {
-		if strings.Contains(v, "*") || strings.Contains(v, "0.0.0.0/0") {
+	if v, ok := env["NFS_EXPORT_OPTIONS"]; ok {
+		low := strings.ToLower(v)
+		if !strings.Contains(low, "sec=") || strings.Contains(low, "sec=sys") {
 			sr.Findings = append(sr.Findings, Finding{
-				Rule: "NFS-001", Severity: "high",
-				Message: "world-readable NFS export detected", File: file, Service: svc.Name,
+				Rule: "no_auth_export", Severity: "high",
+				Message: "NFS export uses sys (AUTH_SYS) authentication instead of Kerberos",
+				File: file, Service: svc.Name,
+			})
+		}
+	} else if !hasVolumeContaining(svc, "exports") {
+		sr.Findings = append(sr.Findings, Finding{
+			Rule: "no_auth_export", Severity: "high",
+			Message: "NFS service without explicit export configuration",
+			File: file, Service: svc.Name,
+		})
+	}
+
+	if v, ok := env["NFS_EXPORT_ALLOWED"]; ok {
+		low := strings.ToLower(v)
+		if low == "*" || low == "0.0.0.0/0" {
+			sr.Findings = append(sr.Findings, Finding{
+				Rule: "world_readable", Severity: "critical",
+				Message: fmt.Sprintf("NFS export allows access from all hosts (%s)", v),
+				File: file, Service: svc.Name,
 			})
 		}
 	}
 
 	if v, ok := env["NFS_EXPORT_OPTIONS"]; ok {
-		if strings.Contains(strings.ToLower(v), "no_root_squash") {
+		low := strings.ToLower(v)
+		if strings.Contains(low, "no_root_squash") {
 			sr.Findings = append(sr.Findings, Finding{
-				Rule: "NFS-002", Severity: "critical",
-				Message: "no_root_squash enabled (remote root has local root privileges)", File: file, Service: svc.Name,
+				Rule: "no_root_squash", Severity: "high",
+				Message: "NFS export with no_root_squash allows remote root access",
+				File: file, Service: svc.Name,
 			})
 		}
 	}
-	if v, ok := env["NO_ROOT_SQUASH"]; ok {
+
+	if v, ok := env["NFS_EXPORT_OPTIONS"]; ok {
+		low := strings.ToLower(v)
+		if strings.Contains(low, "insecure") {
+			sr.Findings = append(sr.Findings, Finding{
+				Rule: "insecure_port", Severity: "medium",
+				Message: "NFS export allows connections from unprivileged ports",
+				File: file, Service: svc.Name,
+			})
+		}
+	}
+
+	hasKerberos := false
+	if v, ok := env["NFS_KERBEROS"]; ok {
 		low := strings.ToLower(v)
 		if low == "true" || low == "1" || low == "yes" {
-			sr.Findings = append(sr.Findings, Finding{
-				Rule: "NFS-002", Severity: "critical",
-				Message: "no_root_squash enabled via environment variable", File: file, Service: svc.Name,
-			})
+			hasKerberos = true
 		}
 	}
-
-	if v, ok := env["INSECURE"]; ok {
+	if v, ok := env["NFS_EXPORT_OPTIONS"]; ok {
 		low := strings.ToLower(v)
-		if low == "true" || low == "1" || low == "yes" {
+		if strings.Contains(low, "sec=krb5") {
+			hasKerberos = true
+		}
+	}
+	if hasVolumeContaining(svc, "krb5") || hasVolumeContaining(svc, "keytab") {
+		hasKerberos = true
+	}
+	if !hasKerberos {
+		sr.Findings = append(sr.Findings, Finding{
+			Rule: "missing_kerberos", Severity: "medium",
+			Message: "NFS service without Kerberos authentication configured",
+			File: file, Service: svc.Name,
+		})
+	}
+
+	for _, port := range svc.Ports {
+		if port.TargetPort == 2049 && port.IsAllInterfaces() {
 			sr.Findings = append(sr.Findings, Finding{
-				Rule: "NFS-003", Severity: "medium",
-				Message: "insecure port option enabled (allows unprivileged port connections)", File: file, Service: svc.Name,
-			})
-		}
-	}
-
-	if _, ok := env["NFS_KERBEROS"]; !ok {
-		if _, ok2 := env["KERBEROS_ENABLED"]; !ok2 {
-			if !hasVolumeContaining(svc, "krb5") && !hasVolumeContaining(svc, "keytab") {
-				sr.Findings = append(sr.Findings, Finding{
-					Rule: "NFS-004", Severity: "medium",
-					Message: "Kerberos authentication not configured for NFS", File: file, Service: svc.Name,
-				})
-			}
-		}
-	}
-
-	if v, ok := env["NFS_VERSION"]; ok {
-		if strings.HasPrefix(v, "3") {
-			if _, ok2 := env["NFS_ENCRYPTION"]; !ok2 {
-				sr.Findings = append(sr.Findings, Finding{
-					Rule: "NFS-005", Severity: "high",
-					Message: "NFS v3 without encryption (v3 has no native encryption)", File: file, Service: svc.Name,
-				})
-			}
-		}
-	}
-
-	for _, p := range svc.Ports {
-		if isNFSPort(p.TargetPort) && p.HostIP != "127.0.0.1" {
-			sr.Findings = append(sr.Findings, Finding{
-				Rule: "NFS-006", Severity: "medium",
-				Message: fmt.Sprintf("NFS port %d exposed to network", p.TargetPort),
+				Rule: "exposed_port", Severity: "high",
+				Message: fmt.Sprintf("NFS port 2049 exposed on all interfaces (%s)", port.Raw),
 				File: file, Service: svc.Name,
 			})
 			break
@@ -170,7 +177,7 @@ func Analyze(c *collect.Collected) Report {
 }
 
 func summarize(results []ServiceResult) Summary {
-	s := Summary{}
+	var s Summary
 	s.TotalServices = len(results)
 	for _, r := range results {
 		if len(r.Findings) > 0 {
@@ -179,18 +186,18 @@ func summarize(results []ServiceResult) Summary {
 		for _, f := range r.Findings {
 			s.TotalFindings++
 			switch f.Rule {
-			case "NFS-001":
+			case "no_auth_export":
+				s.NoAuthExport++
+			case "world_readable":
 				s.WorldReadable++
-			case "NFS-002":
+			case "no_root_squash":
 				s.NoRootSquash++
-			case "NFS-003":
-				s.InsecurePorts++
-			case "NFS-004":
+			case "insecure_port":
+				s.InsecurePort++
+			case "missing_kerberos":
 				s.MissingKerberos++
-			case "NFS-005":
-				s.NFSv3NoEncrypt++
-			case "NFS-006":
-				s.ExposedPorts++
+			case "exposed_port":
+				s.ExposedPort++
 			}
 		}
 	}
@@ -199,8 +206,11 @@ func summarize(results []ServiceResult) Summary {
 
 func FormatText(r Report) string {
 	var b strings.Builder
-	b.WriteString("NFS Export Security Audit\n")
+	b.WriteString("NFS Share Security Audit\n")
 	b.WriteString(strings.Repeat("=", 50) + "\n\n")
+	if r.Path != "" {
+		fmt.Fprintf(&b, "  Path: %s\n", r.Path)
+	}
 	fmt.Fprintf(&b, "  Services scanned:   %d\n", r.Summary.TotalServices)
 	fmt.Fprintf(&b, "  Services affected:  %d\n", r.Summary.AffectedServices)
 	fmt.Fprintf(&b, "  Total findings:     %d\n\n", r.Summary.TotalFindings)
@@ -209,9 +219,9 @@ func FormatText(r Report) string {
 		if len(sr.Findings) == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "  Service: %s (%s)\n", sr.Service, sr.Image)
+		fmt.Fprintf(&b, "  Service: %s\n", sr.Service)
 		for _, f := range sr.Findings {
-			fmt.Fprintf(&b, "    [%s][%s] %s\n", f.Rule, f.Severity, f.Message)
+			fmt.Fprintf(&b, "    [%s] [%s] %s\n", f.Rule, f.Severity, f.Message)
 		}
 		b.WriteString("\n")
 	}

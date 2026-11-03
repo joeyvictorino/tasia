@@ -18,13 +18,16 @@ func runNfsaudit(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+
 	if *recursive {
 		return runNfsauditRecursive(*path, *format)
 	}
+
 	c, err := collect.WalkAndCollect(*path)
 	if err != nil {
 		return fmt.Errorf("nfsaudit: %w", err)
 	}
+
 	r := nfsaudit.Analyze(c)
 	printNfsauditResult(r, *format)
 	return nil

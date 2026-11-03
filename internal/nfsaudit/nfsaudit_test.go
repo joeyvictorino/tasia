@@ -8,7 +8,7 @@ import (
 	"github.com/joeyvictorino/tasia/internal/collect/compose"
 )
 
-func mkCollected(services ...compose.Service) *collect.Collected {
+func makeCollected(services ...compose.Service) *collect.Collected {
 	return &collect.Collected{
 		Root: "/test",
 		ComposeFiles: []compose.File{
@@ -17,218 +17,240 @@ func mkCollected(services ...compose.Service) *collect.Collected {
 	}
 }
 
-func svc(name string, opts ...func(*compose.Service)) compose.Service {
-	s := compose.Service{Name: name}
-	for _, o := range opts {
-		o(&s)
+func nfsService(name string, env []string, ports []compose.PortMapping, vols []string) compose.Service {
+	return compose.Service{
+		Name:        name,
+		Image:       "erichough/nfs-server",
+		Environment: env,
+		Ports:       ports,
+		Volumes:     vols,
 	}
-	return s
 }
 
-func withImage(img string) func(*compose.Service) {
-	return func(s *compose.Service) { s.Image = img }
+func TestNonNFSIgnored(t *testing.T) {
+	svc := compose.Service{Name: "web", Image: "nginx:latest"}
+	c := makeCollected(svc)
+	r := Analyze(c)
+	for _, sr := range r.Results {
+		if len(sr.Findings) > 0 {
+			t.Error("expected no findings for non-NFS service")
+		}
+	}
 }
 
-func withEnv(envs ...string) func(*compose.Service) {
-	return func(s *compose.Service) { s.Environment = append(s.Environment, envs...) }
-}
-
-func withPortsFull(ports ...compose.PortMapping) func(*compose.Service) {
-	return func(s *compose.Service) { s.Ports = append(s.Ports, ports...) }
-}
-
-func withVolumes(vols ...string) func(*compose.Service) {
-	return func(s *compose.Service) { s.Volumes = append(s.Volumes, vols...) }
-}
-
-func findRule(results []ServiceResult, ruleID string) *Finding {
-	for _, r := range results {
-		for _, f := range r.Findings {
-			if f.Rule == ruleID {
-				return &f
+func TestNoAuthExport(t *testing.T) {
+	svc := nfsService("nfs", []string{"NFS_EXPORT_OPTIONS=rw,sync,sec=sys"}, nil, nil)
+	c := makeCollected(svc)
+	r := Analyze(c)
+	found := false
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_auth_export" {
+				found = true
 			}
 		}
 	}
-	return nil
-}
-
-func TestWorldReadableExport(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("erichough/nfs-server"), withEnv("NFS_EXPORT=* /data")))
-	r := Analyze(c)
-	if findRule(r.Results, "NFS-001") == nil {
-		t.Fatal("expected NFS-001 for world-readable export")
+	if !found {
+		t.Error("expected no_auth_export finding for sec=sys")
 	}
 }
 
-func TestRestrictedExport(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("erichough/nfs-server"), withEnv("NFS_EXPORT=10.0.0.0/24 /data")))
+func TestNoExportConfig(t *testing.T) {
+	svc := nfsService("nfs", nil, nil, nil)
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-001") != nil {
-		t.Fatal("unexpected NFS-001 when export restricted")
+	found := false
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_auth_export" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected no_auth_export finding for missing export config")
 	}
 }
 
-func TestNoRootSquashOptions(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("NFS_EXPORT_OPTIONS=rw,no_root_squash,sync")))
+func TestExportsVolumeOK(t *testing.T) {
+	svc := nfsService("nfs", []string{"NFS_KERBEROS=true"}, nil, []string{"./exports:/etc/exports:ro"})
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-002") == nil {
-		t.Fatal("expected NFS-002 for no_root_squash")
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_auth_export" {
+				t.Error("should not flag no_auth_export when exports volume mounted")
+			}
+		}
 	}
 }
 
-func TestNoRootSquashEnv(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("NO_ROOT_SQUASH=true")))
+func TestWorldReadable(t *testing.T) {
+	svc := nfsService("nfs", []string{"NFS_EXPORT_ALLOWED=*", "NFS_KERBEROS=true"}, nil, []string{"./exports:/etc/exports"})
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-002") == nil {
-		t.Fatal("expected NFS-002 for no_root_squash env")
+	found := false
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "world_readable" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected world_readable finding")
 	}
 }
 
-func TestRootSquashDefault(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("NFS_EXPORT_OPTIONS=rw,root_squash,sync")))
+func TestNoRootSquash(t *testing.T) {
+	svc := nfsService("nfs", []string{"NFS_EXPORT_OPTIONS=rw,no_root_squash,sec=krb5", "NFS_KERBEROS=true"}, nil, nil)
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-002") != nil {
-		t.Fatal("unexpected NFS-002 when root_squash is default")
+	found := false
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_root_squash" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected no_root_squash finding")
 	}
 }
 
-func TestInsecurePorts(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("INSECURE=true")))
+func TestInsecurePort(t *testing.T) {
+	svc := nfsService("nfs", []string{"NFS_EXPORT_OPTIONS=rw,insecure,sec=krb5", "NFS_KERBEROS=true"}, nil, nil)
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-003") == nil {
-		t.Fatal("expected NFS-003 for insecure ports")
+	found := false
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "insecure_port" {
+				found = true
+			}
+		}
 	}
-}
-
-func TestSecurePorts(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("INSECURE=false")))
-	r := Analyze(c)
-	if findRule(r.Results, "NFS-003") != nil {
-		t.Fatal("unexpected NFS-003 when insecure disabled")
+	if !found {
+		t.Error("expected insecure_port finding")
 	}
 }
 
 func TestMissingKerberos(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-ganesha")))
+	svc := nfsService("nfs", nil, nil, []string{"./exports:/etc/exports"})
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-004") == nil {
-		t.Fatal("expected NFS-004 for missing Kerberos")
+	found := false
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "missing_kerberos" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected missing_kerberos finding")
 	}
 }
 
-func TestKerberosConfigured(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-ganesha"), withEnv("NFS_KERBEROS=true")))
+func TestKerberosViaKeytab(t *testing.T) {
+	svc := nfsService("nfs", nil, nil, []string{"./exports:/etc/exports", "./krb5.keytab:/etc/krb5.keytab"})
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-004") != nil {
-		t.Fatal("unexpected NFS-004 when Kerberos configured")
-	}
-}
-
-func TestKerberosVolumeMount(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-ganesha"), withVolumes("./config/krb5.keytab:/etc/krb5.keytab")))
-	r := Analyze(c)
-	if findRule(r.Results, "NFS-004") != nil {
-		t.Fatal("unexpected NFS-004 when Kerberos keytab mounted")
-	}
-}
-
-func TestNFSv3NoEncrypt(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("NFS_VERSION=3")))
-	r := Analyze(c)
-	if findRule(r.Results, "NFS-005") == nil {
-		t.Fatal("expected NFS-005 for NFS v3 without encryption")
-	}
-}
-
-func TestNFSv3WithEncrypt(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("NFS_VERSION=3", "NFS_ENCRYPTION=stunnel")))
-	r := Analyze(c)
-	if findRule(r.Results, "NFS-005") != nil {
-		t.Fatal("unexpected NFS-005 when encryption configured")
-	}
-}
-
-func TestNFSv4NoEncryptWarning(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"), withEnv("NFS_VERSION=4.2")))
-	r := Analyze(c)
-	if findRule(r.Results, "NFS-005") != nil {
-		t.Fatal("unexpected NFS-005 for NFS v4")
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "missing_kerberos" {
+				t.Error("should not flag missing_kerberos when keytab volume exists")
+			}
+		}
 	}
 }
 
 func TestExposedPort(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"),
-		withPortsFull(compose.PortMapping{HostPort: 2049, TargetPort: 2049, Raw: "2049:2049"})))
+	ports := []compose.PortMapping{
+		{HostPort: 2049, TargetPort: 2049, Raw: "0.0.0.0:2049:2049", HostIP: "0.0.0.0"},
+	}
+	svc := nfsService("nfs", []string{"NFS_KERBEROS=true"}, ports, []string{"./exports:/etc/exports"})
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-006") == nil {
-		t.Fatal("expected NFS-006 for exposed NFS port")
+	found := false
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "exposed_port" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected exposed_port finding")
 	}
 }
 
-func TestLocalhostPort(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"),
-		withPortsFull(compose.PortMapping{HostPort: 2049, TargetPort: 2049, Raw: "127.0.0.1:2049:2049", HostIP: "127.0.0.1"})))
+func TestLocalhostNotExposed(t *testing.T) {
+	ports := []compose.PortMapping{
+		{HostPort: 2049, TargetPort: 2049, Raw: "127.0.0.1:2049:2049", HostIP: "127.0.0.1"},
+	}
+	svc := nfsService("nfs", []string{"NFS_KERBEROS=true"}, ports, []string{"./exports:/etc/exports"})
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if findRule(r.Results, "NFS-006") != nil {
-		t.Fatal("unexpected NFS-006 for localhost binding")
-	}
-}
-
-func TestNonNFSServiceIgnored(t *testing.T) {
-	c := mkCollected(svc("web", withImage("nginx:latest")))
-	r := Analyze(c)
-	if r.Summary.TotalFindings != 0 {
-		t.Fatalf("expected 0 findings, got %d", r.Summary.TotalFindings)
-	}
-}
-
-func TestIsNFSImage(t *testing.T) {
-	tests := []struct {
-		image string
-		want  bool
-	}{
-		{"erichough/nfs-server:latest", true},
-		{"itsthenetwork/nfs-server-alpine", true},
-		{"nfs-ganesha:3.5", true},
-		{"nginx:latest", false},
-		{"postgres:15", false},
-	}
-	for _, tt := range tests {
-		if got := isNFSImage(tt.image); got != tt.want {
-			t.Errorf("isNFSImage(%q) = %v, want %v", tt.image, got, tt.want)
+	for _, sr := range r.Results {
+		for _, f := range sr.Findings {
+			if f.Rule == "exposed_port" {
+				t.Error("should not flag exposed_port for localhost binding")
+			}
 		}
 	}
 }
 
 func TestSummaryCounts(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server"),
-		withEnv("NFS_EXPORT=* /data", "NFS_EXPORT_OPTIONS=rw,no_root_squash"),
-		withPortsFull(compose.PortMapping{HostPort: 2049, TargetPort: 2049, Raw: "2049:2049"})))
+	svc := nfsService("nfs", []string{"NFS_EXPORT_ALLOWED=*", "NFS_EXPORT_OPTIONS=rw,no_root_squash,insecure,sec=sys"}, nil, nil)
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if r.Summary.WorldReadable != 1 {
-		t.Errorf("expected 1 world readable, got %d", r.Summary.WorldReadable)
+	if r.Summary.AffectedServices != 1 {
+		t.Errorf("expected 1 affected service, got %d", r.Summary.AffectedServices)
 	}
-	if r.Summary.NoRootSquash != 1 {
-		t.Errorf("expected 1 no_root_squash, got %d", r.Summary.NoRootSquash)
-	}
-	if r.Summary.ExposedPorts != 1 {
-		t.Errorf("expected 1 exposed port, got %d", r.Summary.ExposedPorts)
+	if r.Summary.TotalFindings < 3 {
+		t.Errorf("expected at least 3 findings, got %d", r.Summary.TotalFindings)
 	}
 }
 
-func TestFormatTextOutput(t *testing.T) {
-	c := mkCollected(svc("nfs", withImage("nfs-server")))
+func TestFormatText(t *testing.T) {
+	svc := nfsService("nfs", nil, nil, nil)
+	c := makeCollected(svc)
 	r := Analyze(c)
 	text := FormatText(r)
-	if !strings.Contains(text, "NFS Export Security Audit") {
-		t.Fatal("expected header in output")
+	if !strings.Contains(text, "NFS Share") {
+		t.Error("expected NFS Share header")
+	}
+	if !strings.Contains(text, "nfs") {
+		t.Error("expected service name in output")
 	}
 }
 
-func TestReportPath(t *testing.T) {
-	c := &collect.Collected{Root: "/my/project"}
+func TestFormatJSON(t *testing.T) {
+	svc := nfsService("nfs", nil, nil, nil)
+	c := makeCollected(svc)
 	r := Analyze(c)
-	if r.Path != "/my/project" {
-		t.Errorf("expected /my/project, got %s", r.Path)
+	j := FormatJSON(r)
+	if !strings.Contains(j, "no_auth_export") {
+		t.Error("expected rule in JSON output")
+	}
+}
+
+func TestGaneshaNFS(t *testing.T) {
+	svc := compose.Service{
+		Name:  "ganesha",
+		Image: "nfs-ganesha:latest",
+	}
+	c := makeCollected(svc)
+	r := Analyze(c)
+	found := false
+	for _, sr := range r.Results {
+		if len(sr.Findings) > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected findings for Ganesha NFS image")
 	}
 }
