@@ -382,6 +382,10 @@ func Run(args []string) error {
 		return runIpblock(args[1:])
 	case "certpin":
 		return runCertpin(args[1:])
+	case "userlookup":
+		return runUserlookup(args[1:])
+	case "capbound":
+		return runCapbound(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

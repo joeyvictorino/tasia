@@ -151,6 +151,11 @@ type Service struct {
 	BlkioDeviceReadIOps []BlkioRateDevice
 	BlkioDeviceWriteIOps []BlkioRateDevice
 	BlkioConfigLine     int
+	// User directive
+	User     string
+	UserLine int
+	// Group name (parsed from user:group)
+	GroupName string
 }
 
 // BlkioWeightDevice represents a per-device weight override in blkio_config.
@@ -294,6 +299,16 @@ func Parse(path string) (*File, error) {
 			if nmNode != nil {
 				svc.NetworkMode = strings.Trim(nmNode.Value, `"' `)
 				svc.NetworkModeLine = nmNode.Line
+			}
+			// user
+			userNode := getMapValue(svcNode, "user")
+			if userNode != nil {
+				raw := strings.Trim(userNode.Value, `"' `)
+				svc.User = raw
+				svc.UserLine = userNode.Line
+				if parts := strings.SplitN(raw, ":", 2); len(parts) == 2 {
+					svc.GroupName = parts[1]
+				}
 			}
 			// userns_mode
 			unsNode := getMapValue(svcNode, "userns_mode")
