@@ -468,6 +468,10 @@ func Run(args []string) error {
 		return runGpuaccess(args[1:])
 	case "procexec":
 		return runProcexec(args[1:])
+	case "syslog":
+		return runSyslog(args[1:])
+	case "dbus":
+		return runDbus(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
