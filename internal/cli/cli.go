@@ -394,6 +394,10 @@ func Run(args []string) error {
 		return runCgroupquota(args[1:])
 	case "tmpexec":
 		return runTmpexec(args[1:])
+	case "kernelparam":
+		return runKernelparam(args[1:])
+	case "gracefulshutdown":
+		return runGracefulshutdown(args[1:])
 	case "pidlimit":
 		return runPidlimit(args[1:])
 	case "swaplimit":
