@@ -422,6 +422,10 @@ func Run(args []string) error {
 		return runEnvexpand(args[1:])
 	case "volperm":
 		return runVolperm(args[1:])
+	case "secretrotation":
+		return runSecretrotation(args[1:])
+	case "timezoneleak":
+		return runTimezoneleak(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
