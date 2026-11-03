@@ -16,8 +16,17 @@ type Finding struct {
 
 type ServiceResult struct {
 	Service  string    `json:"service"`
-	File     string    `json:"file"`
 	Findings []Finding `json:"findings"`
+}
+
+type Summary struct {
+	DefaultCredentials int `json:"default_credentials"`
+	GuestAccess        int `json:"guest_access"`
+	NoTLS              int `json:"no_tls"`
+	ExposedPort        int `json:"exposed_port"`
+	ManagementExposed  int `json:"management_exposed"`
+	DebugEnabled       int `json:"debug_enabled"`
+	NoAuthBackend      int `json:"no_auth_backend"`
 }
 
 type Report struct {
@@ -26,159 +35,156 @@ type Report struct {
 	Summary  Summary         `json:"summary"`
 }
 
-type Summary struct {
-	TotalServices    int `json:"total_services"`
-	TotalFindings    int `json:"total_findings"`
-	DefaultCreds     int `json:"default_creds"`
-	ExposedMgmt      int `json:"exposed_mgmt"`
-	UnencryptedAMQP  int `json:"unencrypted_amqp"`
-	MissingUserOverride int `json:"missing_user_override"`
-	ExposedCookie    int `json:"exposed_cookie"`
-	MissingSSL       int `json:"missing_ssl"`
-}
-
 var rabbitmqImages = []string{
-	"rabbitmq", "bitnami/rabbitmq", "pivotalrabbitmq",
+	"rabbitmq", "bitnami/rabbitmq", "pivotalrabbitmq/rabbitmq",
+	"arm64v8/rabbitmq", "amd64/rabbitmq",
 }
 
 func isRabbitmqImage(image string) bool {
-	lower := strings.ToLower(image)
+	img := strings.ToLower(image)
 	for _, ri := range rabbitmqImages {
-		if strings.Contains(lower, ri) {
+		if strings.Contains(img, ri) {
 			return true
 		}
 	}
 	return false
-}
-
-func hasEnvKey(envs []string, key string) bool {
-	for _, e := range envs {
-		parts := strings.SplitN(e, "=", 2)
-		if len(parts) >= 1 && strings.EqualFold(parts[0], key) {
-			return true
-		}
-	}
-	return false
-}
-
-func getEnvValue(envs []string, key string) string {
-	for _, e := range envs {
-		parts := strings.SplitN(e, "=", 2)
-		if len(parts) == 2 && strings.EqualFold(parts[0], key) {
-			return parts[1]
-		}
-	}
-	return ""
 }
 
 func hasDefaultCredentials(envs []string) bool {
-	user := getEnvValue(envs, "RABBITMQ_DEFAULT_USER")
-	pass := getEnvValue(envs, "RABBITMQ_DEFAULT_PASS")
-	if user == "" && pass == "" {
-		return true
-	}
-	if strings.EqualFold(user, "guest") && strings.EqualFold(pass, "guest") {
-		return true
-	}
-	defaults := []string{"guest", "admin", "password", "123456", "rabbitmq"}
-	for _, d := range defaults {
-		if strings.EqualFold(pass, d) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasUserOverride(envs []string) bool {
-	return hasEnvKey(envs, "RABBITMQ_DEFAULT_USER")
-}
-
-func hasSSLConfig(envs []string) bool {
+	defaults := []string{"guest", "admin", "rabbitmq", "password", "changeme"}
 	for _, e := range envs {
 		lower := strings.ToLower(e)
-		if strings.Contains(lower, "ssl") || strings.Contains(lower, "tls") {
-			return true
+		if strings.Contains(lower, "rabbitmq_default_pass=") ||
+			strings.Contains(lower, "rabbitmq_password=") {
+			for _, d := range defaults {
+				if strings.Contains(lower, "="+d) {
+					return true
+				}
+			}
 		}
 	}
-	sslVars := []string{
-		"RABBITMQ_SSL_CERTFILE",
-		"RABBITMQ_SSL_KEYFILE",
-		"RABBITMQ_SSL_CACERTFILE",
-		"RABBITMQ_SSL_FAIL_IF_NO_PEER_CERT",
-	}
-	for _, k := range sslVars {
-		if hasEnvKey(envs, k) {
+	return false
+}
+
+func hasGuestAccess(envs []string) bool {
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "rabbitmq_default_user=guest") ||
+			strings.Contains(lower, "loopback_users=none") ||
+			strings.Contains(lower, "loopback_users.guest=false") {
 			return true
 		}
 	}
 	return false
 }
 
-func hasCookieExposed(envs []string) bool {
-	return hasEnvKey(envs, "RABBITMQ_ERLANG_COOKIE")
-}
-
-func isMgmtPort(port compose.PortMapping) bool {
-	return port.TargetPort == 15672 || port.TargetPort == 15671
-}
-
-func isAMQPPort(port compose.PortMapping) bool {
-	return port.TargetPort == 5672
-}
-
-func analyzeService(svc compose.Service, file string) ServiceResult {
-	sr := ServiceResult{Service: svc.Name, File: file}
-
-	if !isRabbitmqImage(svc.Image) {
-		return sr
+func hasNoTLS(envs []string) bool {
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "ssl=false") ||
+			strings.Contains(lower, "tls=false") ||
+			strings.Contains(lower, "rabbitmq_ssl=false") {
+			return true
+		}
 	}
+	return false
+}
 
-	if hasDefaultCredentials(svc.Environment) {
+func hasDebugEnabled(envs []string) bool {
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "log_level=debug") ||
+			strings.Contains(lower, "rabbitmq_log=debug") ||
+			(strings.Contains(lower, "debug") && strings.Contains(lower, "=true")) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNoAuthBackend(envs []string) bool {
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "auth_backends=none") ||
+			strings.Contains(lower, "auth_backend=none") {
+			return true
+		}
+	}
+	return false
+}
+
+func analyzeService(svc compose.Service) ServiceResult {
+	sr := ServiceResult{Service: svc.Name}
+	envs := svc.Environment
+
+	if hasDefaultCredentials(envs) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "critical",
-			Rule:    "default_creds",
-			Message: fmt.Sprintf("Service '%s' RabbitMQ uses default or well-known credentials", svc.Name),
+			Rule:    "rabbitmq_default_credentials",
+			Message: fmt.Sprintf("service %q: RabbitMQ using default/weak credentials", svc.Name),
 		})
 	}
 
-	for _, port := range svc.Ports {
-		if isMgmtPort(port) && port.IsAllInterfaces() {
-			sr.Findings = append(sr.Findings, Finding{
-				Level:   "high",
-				Rule:    "exposed_mgmt",
-				Message: fmt.Sprintf("Service '%s' exposes RabbitMQ management UI port %d on all interfaces", svc.Name, port.TargetPort),
-			})
-		}
-		if isAMQPPort(port) && port.IsAllInterfaces() && !hasSSLConfig(svc.Environment) {
-			sr.Findings = append(sr.Findings, Finding{
-				Level:   "high",
-				Rule:    "unencrypted_amqp",
-				Message: fmt.Sprintf("Service '%s' exposes unencrypted AMQP port %d without TLS", svc.Name, port.TargetPort),
-			})
-		}
+	if hasGuestAccess(envs) {
+		sr.Findings = append(sr.Findings, Finding{
+			Level:   "critical",
+			Rule:    "rabbitmq_guest_access",
+			Message: fmt.Sprintf("service %q: RabbitMQ guest user enabled for remote access", svc.Name),
+		})
 	}
 
-	if !hasUserOverride(svc.Environment) {
+	if hasNoTLS(envs) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "high",
-			Rule:    "missing_user_override",
-			Message: fmt.Sprintf("Service '%s' RabbitMQ has no RABBITMQ_DEFAULT_USER override; defaults to guest", svc.Name),
+			Rule:    "rabbitmq_no_tls",
+			Message: fmt.Sprintf("service %q: RabbitMQ TLS/SSL disabled", svc.Name),
 		})
 	}
 
-	if hasCookieExposed(svc.Environment) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "high",
-			Rule:    "exposed_cookie",
-			Message: fmt.Sprintf("Service '%s' exposes RABBITMQ_ERLANG_COOKIE in environment variables", svc.Name),
-		})
+	exposedPorts := map[int]string{
+		5672:  "AMQP",
+		5671:  "AMQPS",
+		15672: "Management UI",
+		15671: "Management UI (TLS)",
+		25672: "Erlang distribution",
+		4369:  "EPMD",
+		61613: "STOMP",
+		15674: "WebSTOMP",
+		1883:  "MQTT",
+	}
+	for _, p := range svc.Ports {
+		if desc, ok := exposedPorts[p.TargetPort]; ok {
+			if p.IsAllInterfaces() {
+				if p.TargetPort == 15672 || p.TargetPort == 15671 {
+					sr.Findings = append(sr.Findings, Finding{
+						Level:   "critical",
+						Rule:    "rabbitmq_management_exposed",
+						Message: fmt.Sprintf("service %q: RabbitMQ %s exposed on all interfaces", svc.Name, desc),
+					})
+				} else {
+					sr.Findings = append(sr.Findings, Finding{
+						Level:   "high",
+						Rule:    "rabbitmq_exposed_port",
+						Message: fmt.Sprintf("service %q: port %d (%s) exposed on all interfaces", svc.Name, p.TargetPort, desc),
+					})
+				}
+			}
+		}
 	}
 
-	if !hasSSLConfig(svc.Environment) {
+	if hasDebugEnabled(envs) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "medium",
-			Rule:    "missing_ssl",
-			Message: fmt.Sprintf("Service '%s' RabbitMQ has no SSL/TLS certificate configuration", svc.Name),
+			Rule:    "rabbitmq_debug_enabled",
+			Message: fmt.Sprintf("service %q: RabbitMQ debug logging enabled", svc.Name),
+		})
+	}
+
+	if hasNoAuthBackend(envs) {
+		sr.Findings = append(sr.Findings, Finding{
+			Level:   "critical",
+			Rule:    "rabbitmq_no_auth_backend",
+			Message: fmt.Sprintf("service %q: RabbitMQ authentication backend disabled", svc.Name),
 		})
 	}
 
@@ -189,57 +195,59 @@ func Analyze(c *collect.Collected) Report {
 	r := Report{Path: c.Root}
 	for _, cf := range c.ComposeFiles {
 		for _, svc := range cf.Services {
-			sr := analyzeService(svc, cf.Path)
+			if !isRabbitmqImage(svc.Image) {
+				continue
+			}
+			sr := analyzeService(svc)
 			r.Services = append(r.Services, sr)
-		}
-	}
-	r.Summary = summarize(r.Services)
-	return r
-}
-
-func summarize(services []ServiceResult) Summary {
-	s := Summary{TotalServices: len(services)}
-	for _, sr := range services {
-		for _, f := range sr.Findings {
-			s.TotalFindings++
-			switch f.Rule {
-			case "default_creds":
-				s.DefaultCreds++
-			case "exposed_mgmt":
-				s.ExposedMgmt++
-			case "unencrypted_amqp":
-				s.UnencryptedAMQP++
-			case "missing_user_override":
-				s.MissingUserOverride++
-			case "exposed_cookie":
-				s.ExposedCookie++
-			case "missing_ssl":
-				s.MissingSSL++
+			for _, f := range sr.Findings {
+				switch f.Rule {
+				case "rabbitmq_default_credentials":
+					r.Summary.DefaultCredentials++
+				case "rabbitmq_guest_access":
+					r.Summary.GuestAccess++
+				case "rabbitmq_no_tls":
+					r.Summary.NoTLS++
+				case "rabbitmq_exposed_port":
+					r.Summary.ExposedPort++
+				case "rabbitmq_management_exposed":
+					r.Summary.ManagementExposed++
+				case "rabbitmq_debug_enabled":
+					r.Summary.DebugEnabled++
+				case "rabbitmq_no_auth_backend":
+					r.Summary.NoAuthBackend++
+				}
 			}
 		}
 	}
-	return s
+	return r
 }
 
 func FormatText(r Report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "RabbitMQ Security Audit (%d services, %d findings)\n\n", r.Summary.TotalServices, r.Summary.TotalFindings)
-	fmt.Fprintf(&b, "  Default credentials:        %d\n", r.Summary.DefaultCreds)
-	fmt.Fprintf(&b, "  Exposed management UI:      %d\n", r.Summary.ExposedMgmt)
-	fmt.Fprintf(&b, "  Unencrypted AMQP:           %d\n", r.Summary.UnencryptedAMQP)
-	fmt.Fprintf(&b, "  Missing user override:      %d\n", r.Summary.MissingUserOverride)
-	fmt.Fprintf(&b, "  Exposed Erlang cookie:      %d\n", r.Summary.ExposedCookie)
-	fmt.Fprintf(&b, "  Missing SSL/TLS:            %d\n\n", r.Summary.MissingSSL)
-	for _, sr := range r.Services {
-		fmt.Fprintf(&b, "  %-30s\n", sr.Service)
-		fmt.Fprintf(&b, "    file: %s\n", sr.File)
-		if len(sr.Findings) == 0 {
-			fmt.Fprintf(&b, "    (no findings)\n")
+	b.WriteString("RabbitMQ Security Audit\n")
+	b.WriteString(strings.Repeat("=", 50) + "\n")
+	fmt.Fprintf(&b, "Path: %s\n\n", r.Path)
+
+	if len(r.Services) == 0 {
+		b.WriteString("  No RabbitMQ services found.\n")
+		return b.String()
+	}
+
+	for _, svc := range r.Services {
+		fmt.Fprintf(&b, "  Service: %s\n", svc.Service)
+		if len(svc.Findings) == 0 {
+			b.WriteString("    No findings.\n")
 		}
-		for _, f := range sr.Findings {
-			fmt.Fprintf(&b, "    [%s] %s\n", f.Level, f.Message)
+		for _, f := range svc.Findings {
+			fmt.Fprintf(&b, "    [%s] %s: %s\n", f.Level, f.Rule, f.Message)
 		}
 		b.WriteString("\n")
 	}
+
+	fmt.Fprintf(&b, "  Summary: default_creds=%d guest=%d no_tls=%d exposed=%d mgmt=%d debug=%d no_auth=%d\n",
+		r.Summary.DefaultCredentials, r.Summary.GuestAccess, r.Summary.NoTLS,
+		r.Summary.ExposedPort, r.Summary.ManagementExposed, r.Summary.DebugEnabled, r.Summary.NoAuthBackend)
+
 	return b.String()
 }

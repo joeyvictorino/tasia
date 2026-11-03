@@ -16,8 +16,17 @@ type Finding struct {
 
 type ServiceResult struct {
 	Service  string    `json:"service"`
-	File     string    `json:"file"`
 	Findings []Finding `json:"findings"`
+}
+
+type Summary struct {
+	NoAuth            int `json:"no_auth"`
+	DefaultCredentials int `json:"default_credentials"`
+	ExposedPort       int `json:"exposed_port"`
+	NoTLS             int `json:"no_tls"`
+	BindAllInterfaces int `json:"bind_all_interfaces"`
+	ScriptingEnabled  int `json:"scripting_enabled"`
+	DebugEnabled      int `json:"debug_enabled"`
 }
 
 type Report struct {
@@ -26,93 +35,35 @@ type Report struct {
 	Summary  Summary         `json:"summary"`
 }
 
-type Summary struct {
-	TotalServices      int `json:"total_services"`
-	TotalFindings      int `json:"total_findings"`
-	NoAuth             int `json:"no_auth"`
-	DefaultCredentials int `json:"default_credentials"`
-	ExposedPort        int `json:"exposed_port"`
-	NoTLS              int `json:"no_tls"`
-	BindAllInterfaces  int `json:"bind_all_interfaces"`
-}
-
 var mongoImages = []string{
 	"mongo", "bitnami/mongodb", "percona/percona-server-mongodb",
-	"mongodb/mongodb-community-server", "circleci/mongo",
-}
-
-var authVars = []string{
-	"MONGO_INITDB_ROOT_USERNAME",
-	"MONGODB_ROOT_USER",
-	"MONGODB_ROOT_USERNAME",
-	"MONGODB_EXTRA_USERNAMES",
-	"MONGO_USERNAME",
-}
-
-var passwordVars = []string{
-	"MONGO_INITDB_ROOT_PASSWORD",
-	"MONGODB_ROOT_PASSWORD",
-	"MONGO_PASSWORD",
-	"MONGODB_EXTRA_PASSWORDS",
-}
-
-var defaultCredentials = []string{
-	"admin", "root", "mongo", "password",
-	"changeme", "secret", "12345", "123456",
-	"test", "mongodb",
-}
-
-var tlsVars = []string{
-	"MONGODB_EXTRA_FLAGS",
-	"MONGO_TLS",
-	"MONGODB_TLS_ENABLED",
-	"MONGODB_EXTRA_FLAGS",
+	"arm64v8/mongo", "amd64/mongo", "circleci/mongo",
 }
 
 func isMongoImage(image string) bool {
-	lower := strings.ToLower(image)
+	img := strings.ToLower(image)
 	for _, mi := range mongoImages {
-		if strings.Contains(lower, mi) {
+		if strings.Contains(img, mi) {
 			return true
 		}
 	}
 	return false
 }
 
-func getEnvValue(envs []string, key string) string {
+func hasNoAuth(envs []string, command []string) bool {
 	for _, e := range envs {
-		parts := strings.SplitN(e, "=", 2)
-		if len(parts) == 2 && strings.EqualFold(parts[0], key) {
-			return parts[1]
-		}
-	}
-	return ""
-}
-
-func hasEnvKey(envs []string, key string) bool {
-	for _, e := range envs {
-		parts := strings.SplitN(e, "=", 2)
-		if len(parts) >= 1 && strings.EqualFold(parts[0], key) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasAuthConfig(svc compose.Service) bool {
-	for _, k := range authVars {
-		if hasEnvKey(svc.Environment, k) {
-			return true
-		}
-	}
-	for _, cmd := range svc.Command {
-		if strings.Contains(cmd, "--auth") {
-			return true
-		}
-	}
-	for _, e := range svc.Environment {
 		lower := strings.ToLower(e)
-		if strings.Contains(lower, "auth") && !strings.Contains(lower, "noauth") {
+		if strings.Contains(lower, "mongo_initdb_root_username=") {
+			return false
+		}
+		if strings.Contains(lower, "auth=false") ||
+			strings.Contains(lower, "noauth") {
+			return true
+		}
+	}
+	for _, c := range command {
+		lower := strings.ToLower(c)
+		if strings.Contains(lower, "--noauth") {
 			return true
 		}
 	}
@@ -120,122 +71,143 @@ func hasAuthConfig(svc compose.Service) bool {
 }
 
 func hasDefaultCredentials(envs []string) bool {
-	for _, k := range passwordVars {
-		val := getEnvValue(envs, k)
-		if val == "" {
-			continue
-		}
-		lower := strings.ToLower(val)
-		for _, dc := range defaultCredentials {
-			if lower == dc {
-				return true
-			}
-		}
-	}
-	for _, k := range authVars {
-		val := getEnvValue(envs, k)
-		if val == "" {
-			continue
-		}
-		lower := strings.ToLower(val)
-		for _, dc := range defaultCredentials {
-			if lower == dc {
-				return true
+	defaults := []string{"admin", "root", "mongo", "password", "changeme", "default"}
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "mongo_initdb_root_password=") ||
+			strings.Contains(lower, "mongodb_root_password=") {
+			for _, d := range defaults {
+				if strings.Contains(lower, "="+d) {
+					return true
+				}
 			}
 		}
 	}
 	return false
 }
 
-func hasTLSConfig(svc compose.Service) bool {
-	for _, k := range tlsVars {
-		val := getEnvValue(svc.Environment, k)
-		if val != "" && (strings.Contains(strings.ToLower(val), "tls") || strings.Contains(strings.ToLower(val), "ssl")) {
-			return true
-		}
-	}
-	for _, e := range svc.Environment {
+func hasNoTLS(envs []string) bool {
+	for _, e := range envs {
 		lower := strings.ToLower(e)
-		if strings.Contains(lower, "tls") || strings.Contains(lower, "ssl") {
-			return true
-		}
-	}
-	for _, cmd := range svc.Command {
-		if strings.Contains(cmd, "--tls") || strings.Contains(cmd, "--sslMode") {
+		if strings.Contains(lower, "tls=false") ||
+			strings.Contains(lower, "ssl=false") ||
+			strings.Contains(lower, "tlsmode=disabled") ||
+			strings.Contains(lower, "sslmode=disabled") {
 			return true
 		}
 	}
 	return false
 }
 
-func hasBindAllInterfaces(svc compose.Service) bool {
-	for _, cmd := range svc.Command {
-		if strings.Contains(cmd, "--bind_ip_all") {
-			return true
-		}
-		if strings.Contains(cmd, "bindIp=0.0.0.0") || strings.Contains(cmd, "bind_ip=0.0.0.0") {
+func hasBindAllInterfaces(envs []string, command []string) bool {
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "bind_ip=0.0.0.0") ||
+			strings.Contains(lower, "bind_ip_all=true") {
 			return true
 		}
 	}
-	for _, e := range svc.Environment {
-		lower := strings.ToLower(e)
-		if strings.Contains(lower, "bind_ip_all") || strings.Contains(lower, "bindip=0.0.0.0") {
+	for _, c := range command {
+		lower := strings.ToLower(c)
+		if strings.Contains(lower, "--bind_ip_all") ||
+			strings.Contains(lower, "--bind_ip=0.0.0.0") {
 			return true
 		}
 	}
 	return false
 }
 
-func isMongoPort(port compose.PortMapping) bool {
-	return port.TargetPort == 27017 || port.TargetPort == 27018 || port.TargetPort == 27019
+func hasScriptingEnabled(envs []string) bool {
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "scripting=true") ||
+			strings.Contains(lower, "javascriptenabled=true") {
+			return true
+		}
+	}
+	return false
 }
 
-func analyzeService(svc compose.Service, file string) ServiceResult {
-	sr := ServiceResult{Service: svc.Name, File: file}
-
-	if !isMongoImage(svc.Image) {
-		return sr
+func hasDebugEnabled(envs []string) bool {
+	for _, e := range envs {
+		lower := strings.ToLower(e)
+		if strings.Contains(lower, "verbose") && strings.Contains(lower, "=true") {
+			return true
+		}
+		if strings.Contains(lower, "logLevel=0") {
+			return true
+		}
 	}
+	return false
+}
 
-	if !hasAuthConfig(svc) {
+func analyzeService(svc compose.Service) ServiceResult {
+	sr := ServiceResult{Service: svc.Name}
+	envs := svc.Environment
+
+	if hasNoAuth(envs, svc.Command) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "critical",
-			Rule:    "no_auth",
-			Message: fmt.Sprintf("Service '%s' runs MongoDB without authentication; any client can read and write all databases", svc.Name),
+			Rule:    "mongo_no_auth",
+			Message: fmt.Sprintf("service %q: MongoDB authentication disabled", svc.Name),
 		})
 	}
 
-	if hasDefaultCredentials(svc.Environment) {
+	if hasDefaultCredentials(envs) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "critical",
-			Rule:    "default_credentials",
-			Message: fmt.Sprintf("Service '%s' uses common default MongoDB credentials", svc.Name),
+			Rule:    "mongo_default_credentials",
+			Message: fmt.Sprintf("service %q: MongoDB using default/weak credentials", svc.Name),
 		})
 	}
 
-	for _, port := range svc.Ports {
-		if isMongoPort(port) && port.IsAllInterfaces() {
-			sr.Findings = append(sr.Findings, Finding{
-				Level:   "high",
-				Rule:    "exposed_port",
-				Message: fmt.Sprintf("Service '%s' exposes MongoDB port %d on all interfaces", svc.Name, port.TargetPort),
-			})
+	exposedPorts := map[int]string{
+		27017: "MongoDB",
+		27018: "MongoDB shard",
+		27019: "MongoDB config server",
+		28017: "MongoDB HTTP interface",
+	}
+	for _, p := range svc.Ports {
+		if desc, ok := exposedPorts[p.TargetPort]; ok {
+			if p.IsAllInterfaces() {
+				sr.Findings = append(sr.Findings, Finding{
+					Level:   "high",
+					Rule:    "mongo_exposed_port",
+					Message: fmt.Sprintf("service %q: port %d (%s) exposed on all interfaces", svc.Name, p.TargetPort, desc),
+				})
+			}
 		}
 	}
 
-	if !hasTLSConfig(svc) {
+	if hasNoTLS(envs) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "high",
-			Rule:    "no_tls",
-			Message: fmt.Sprintf("Service '%s' MongoDB has no TLS/SSL configuration; traffic is unencrypted", svc.Name),
+			Rule:    "mongo_no_tls",
+			Message: fmt.Sprintf("service %q: MongoDB TLS/SSL disabled", svc.Name),
 		})
 	}
 
-	if hasBindAllInterfaces(svc) && !hasAuthConfig(svc) {
+	if hasBindAllInterfaces(envs, svc.Command) {
 		sr.Findings = append(sr.Findings, Finding{
-			Level:   "critical",
-			Rule:    "bind_all_interfaces",
-			Message: fmt.Sprintf("Service '%s' MongoDB binds to all interfaces without authentication", svc.Name),
+			Level:   "high",
+			Rule:    "mongo_bind_all",
+			Message: fmt.Sprintf("service %q: MongoDB bound to all interfaces", svc.Name),
+		})
+	}
+
+	if hasScriptingEnabled(envs) {
+		sr.Findings = append(sr.Findings, Finding{
+			Level:   "medium",
+			Rule:    "mongo_scripting_enabled",
+			Message: fmt.Sprintf("service %q: MongoDB server-side scripting enabled", svc.Name),
+		})
+	}
+
+	if hasDebugEnabled(envs) {
+		sr.Findings = append(sr.Findings, Finding{
+			Level:   "medium",
+			Rule:    "mongo_debug_enabled",
+			Message: fmt.Sprintf("service %q: MongoDB verbose/debug logging enabled", svc.Name),
 		})
 	}
 
@@ -246,54 +218,59 @@ func Analyze(c *collect.Collected) Report {
 	r := Report{Path: c.Root}
 	for _, cf := range c.ComposeFiles {
 		for _, svc := range cf.Services {
-			sr := analyzeService(svc, cf.Path)
+			if !isMongoImage(svc.Image) {
+				continue
+			}
+			sr := analyzeService(svc)
 			r.Services = append(r.Services, sr)
-		}
-	}
-	r.Summary = summarize(r.Services)
-	return r
-}
-
-func summarize(services []ServiceResult) Summary {
-	s := Summary{TotalServices: len(services)}
-	for _, sr := range services {
-		for _, f := range sr.Findings {
-			s.TotalFindings++
-			switch f.Rule {
-			case "no_auth":
-				s.NoAuth++
-			case "default_credentials":
-				s.DefaultCredentials++
-			case "exposed_port":
-				s.ExposedPort++
-			case "no_tls":
-				s.NoTLS++
-			case "bind_all_interfaces":
-				s.BindAllInterfaces++
+			for _, f := range sr.Findings {
+				switch f.Rule {
+				case "mongo_no_auth":
+					r.Summary.NoAuth++
+				case "mongo_default_credentials":
+					r.Summary.DefaultCredentials++
+				case "mongo_exposed_port":
+					r.Summary.ExposedPort++
+				case "mongo_no_tls":
+					r.Summary.NoTLS++
+				case "mongo_bind_all":
+					r.Summary.BindAllInterfaces++
+				case "mongo_scripting_enabled":
+					r.Summary.ScriptingEnabled++
+				case "mongo_debug_enabled":
+					r.Summary.DebugEnabled++
+				}
 			}
 		}
 	}
-	return s
+	return r
 }
 
 func FormatText(r Report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "MongoDB Security Audit (%d services, %d findings)\n\n", r.Summary.TotalServices, r.Summary.TotalFindings)
-	fmt.Fprintf(&b, "  No authentication:     %d\n", r.Summary.NoAuth)
-	fmt.Fprintf(&b, "  Default credentials:   %d\n", r.Summary.DefaultCredentials)
-	fmt.Fprintf(&b, "  Exposed ports:         %d\n", r.Summary.ExposedPort)
-	fmt.Fprintf(&b, "  No TLS/SSL:            %d\n", r.Summary.NoTLS)
-	fmt.Fprintf(&b, "  Bind all interfaces:   %d\n\n", r.Summary.BindAllInterfaces)
-	for _, sr := range r.Services {
-		fmt.Fprintf(&b, "  %-30s\n", sr.Service)
-		fmt.Fprintf(&b, "    file: %s\n", sr.File)
-		if len(sr.Findings) == 0 {
-			fmt.Fprintf(&b, "    (no findings)\n")
+	b.WriteString("MongoDB Security Audit\n")
+	b.WriteString(strings.Repeat("=", 50) + "\n")
+	fmt.Fprintf(&b, "Path: %s\n\n", r.Path)
+
+	if len(r.Services) == 0 {
+		b.WriteString("  No MongoDB services found.\n")
+		return b.String()
+	}
+
+	for _, svc := range r.Services {
+		fmt.Fprintf(&b, "  Service: %s\n", svc.Service)
+		if len(svc.Findings) == 0 {
+			b.WriteString("    No findings.\n")
 		}
-		for _, f := range sr.Findings {
-			fmt.Fprintf(&b, "    [%s] %s\n", f.Level, f.Message)
+		for _, f := range svc.Findings {
+			fmt.Fprintf(&b, "    [%s] %s: %s\n", f.Level, f.Rule, f.Message)
 		}
 		b.WriteString("\n")
 	}
+
+	fmt.Fprintf(&b, "  Summary: no_auth=%d default_creds=%d exposed=%d no_tls=%d bind_all=%d scripting=%d debug=%d\n",
+		r.Summary.NoAuth, r.Summary.DefaultCredentials, r.Summary.ExposedPort,
+		r.Summary.NoTLS, r.Summary.BindAllInterfaces, r.Summary.ScriptingEnabled, r.Summary.DebugEnabled)
+
 	return b.String()
 }
