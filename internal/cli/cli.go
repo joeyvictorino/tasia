@@ -522,6 +522,10 @@ func Run(args []string) error {
 		return runWebhooksec(args[1:])
 	case "jwtsec":
 		return runJwtsec(args[1:])
+	case "ssrfaudit":
+		return runSsrfaudit(args[1:])
+	case "headerinjection":
+		return runHeaderinjection(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
