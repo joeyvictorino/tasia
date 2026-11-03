@@ -464,6 +464,10 @@ func Run(args []string) error {
 		return runSignalforward(args[1:])
 	case "portrange":
 		return runPortrange(args[1:])
+	case "gpuaccess":
+		return runGpuaccess(args[1:])
+	case "procexec":
+		return runProcexec(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
