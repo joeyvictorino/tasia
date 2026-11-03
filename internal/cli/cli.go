@@ -506,6 +506,10 @@ func Run(args []string) error {
 		return runBridgeaudit(args[1:])
 	case "mcastaudit":
 		return runMcastaudit(args[1:])
+	case "proxyproto":
+		return runProxyproto(args[1:])
+	case "dnstls":
+		return runDnstls(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
