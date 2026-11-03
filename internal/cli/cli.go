@@ -470,6 +470,10 @@ func Run(args []string) error {
 		return runProcexec(args[1:])
 	case "symlink":
 		return runSymlink(args[1:])
+	case "bindmount":
+		return runBindmount(args[1:])
+	case "nsenter":
+		return runNsenter(args[1:])
 	case "auditlog":
 		return runAuditlog(args[1:])
 	case "syslog":
