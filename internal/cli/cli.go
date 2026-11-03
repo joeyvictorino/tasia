@@ -580,6 +580,10 @@ func Run(args []string) error {
 		return runMemcachedaudit(args[1:])
 	case "etcdaudit":
 		return runEtcdaudit(args[1:])
+	case "snmpaudit":
+		return runSnmpaudit(args[1:])
+	case "sambaaudit":
+		return runSambaaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
