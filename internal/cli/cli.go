@@ -498,6 +498,10 @@ func Run(args []string) error {
 		return runCgroupescape(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
+	case "vxlan":
+		return runVxlan(args[1:])
+	case "macvlan":
+		return runMacvlan(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
