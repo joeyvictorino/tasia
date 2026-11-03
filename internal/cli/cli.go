@@ -584,6 +584,10 @@ func Run(args []string) error {
 		return runSnmpaudit(args[1:])
 	case "sambaaudit":
 		return runSambaaudit(args[1:])
+	case "consulaudit":
+		return runConsulaudit(args[1:])
+	case "zookeeperaudit":
+		return runZookeeperaudit(args[1:])
 	case "vpnaudit":
 		return runVpnaudit(args[1:])
 	case "completions", "completion":

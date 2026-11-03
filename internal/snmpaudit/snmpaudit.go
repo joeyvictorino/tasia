@@ -1,6 +1,7 @@
 package snmpaudit
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,260 +10,179 @@ import (
 )
 
 type Finding struct {
-	Level   string `json:"level"`
-	Rule    string `json:"rule"`
-	Message string `json:"message"`
+	Service string
+	Rule    string
+	Detail  string
 }
 
 type ServiceResult struct {
-	Service  string    `json:"service"`
-	File     string    `json:"file"`
-	Findings []Finding `json:"findings"`
-}
-
-type Report struct {
-	Path     string          `json:"path"`
-	Services []ServiceResult `json:"services"`
-	Summary  Summary         `json:"summary"`
+	Service  string
+	Findings []Finding
 }
 
 type Summary struct {
-	TotalServices    int `json:"total_services"`
-	TotalFindings    int `json:"total_findings"`
-	DefaultCommunity int `json:"default_community"`
-	SNMPv1v2         int `json:"snmpv1v2"`
-	ExposedPorts     int `json:"exposed_ports"`
-	NoAuth           int `json:"no_auth"`
-	WriteAccess      int `json:"write_access"`
-	MissingACL       int `json:"missing_acl"`
+	TotalServices    int
+	TotalFindings    int
+	AffectedServices int
+	ByRule           map[string]int
 }
 
-var snmpImages = []string{
-	"snmpd", "net-snmp", "polinux/snmpd", "elcolio/net-snmp",
-	"maxwo/snmp-exporter", "prom/snmp-exporter",
-	"snmp", "snmpsim",
+type Report struct {
+	Results []ServiceResult
+	Summary Summary
 }
 
-func isSnmpImage(image string) bool {
-	lower := strings.ToLower(image)
-	for _, si := range snmpImages {
-		if strings.Contains(lower, si) {
-			return true
-		}
-	}
-	return false
+type ruleInfo struct{ ID string }
+
+var ruleDefaultCommunity = ruleInfo{ID: "SNMP-001"}
+var ruleSNMPv1v2 = ruleInfo{ID: "SNMP-002"}
+var ruleDefaultPort = ruleInfo{ID: "SNMP-003"}
+var ruleWriteAccess = ruleInfo{ID: "SNMP-004"}
+var ruleNoAuth = ruleInfo{ID: "SNMP-005"}
+var ruleNoEncryption = ruleInfo{ID: "SNMP-006"}
+
+var defaultCommunities = []string{
+	"public", "private", "community", "default", "snmp",
+	"monitor", "manager", "admin", "test", "read", "write",
 }
 
-func hasEnvContaining(envs []string, substr string) bool {
-	lower := strings.ToLower(substr)
-	for _, e := range envs {
-		if strings.Contains(strings.ToLower(e), lower) {
-			return true
-		}
-	}
-	return false
+func isSNMPService(svc compose.Service) bool {
+	combined := strings.ToLower(svc.Image + " " + strings.Join(svc.Command, " ") + " " + strings.Join(svc.Entrypoint, " "))
+	return strings.Contains(combined, "snmp") || strings.Contains(combined, "net-snmp") ||
+		strings.Contains(combined, "snmpd") || strings.Contains(combined, "snmpsim")
 }
 
-func getEnvValue(envs []string, key string) string {
-	for _, e := range envs {
+func envVal(svc compose.Service, keys ...string) (string, bool) {
+	for _, e := range svc.Environment {
 		parts := strings.SplitN(e, "=", 2)
-		if len(parts) == 2 && strings.EqualFold(parts[0], key) {
-			return parts[1]
-		}
-	}
-	return ""
-}
-
-var defaultCommunityStrings = []string{
-	"public", "private", "community", "default",
-	"snmp", "admin", "monitor", "test",
-}
-
-func hasDefaultCommunity(envs []string) bool {
-	for _, e := range envs {
-		lower := strings.ToLower(e)
-		if !strings.Contains(lower, "communit") && !strings.Contains(lower, "rocommunity") && !strings.Contains(lower, "rwcommunity") {
+		if len(parts) != 2 {
 			continue
 		}
-		parts := strings.SplitN(e, "=", 2)
-		val := lower
-		if len(parts) == 2 {
-			val = strings.ToLower(parts[1])
-		}
-		for _, dc := range defaultCommunityStrings {
-			if dc == "community" {
-				if val == dc || strings.HasSuffix(val, "="+dc) {
-					return true
-				}
-				continue
-			}
-			if strings.Contains(val, dc) {
-				return true
+		k := strings.ToUpper(strings.TrimSpace(parts[0]))
+		for _, key := range keys {
+			if k == key {
+				return strings.TrimSpace(parts[1]), true
 			}
 		}
 	}
-	return false
+	return "", false
 }
 
-func isSnmpPort(port compose.PortMapping) bool {
-	return port.TargetPort == 161 || port.TargetPort == 162 || port.TargetPort == 10161 || port.TargetPort == 10162
-}
-
-func hasV3Auth(envs []string) bool {
-	if hasEnvContaining(envs, "SNMPV3") || hasEnvContaining(envs, "SNMP_V3") {
-		return true
-	}
-	if hasEnvContaining(envs, "AUTH_PROTOCOL") || hasEnvContaining(envs, "PRIV_PROTOCOL") {
-		return true
-	}
-	if hasEnvContaining(envs, "authPriv") || hasEnvContaining(envs, "authNoPriv") {
-		return true
-	}
-	if hasEnvContaining(envs, "createUser") {
-		return true
-	}
-	return false
-}
-
-func usesV1V2(envs []string) bool {
-	for _, e := range envs {
-		lower := strings.ToLower(e)
-		if strings.Contains(lower, "snmpv1") || strings.Contains(lower, "snmp_v1") {
+func hasSNMPPort(svc compose.Service) bool {
+	for _, p := range svc.Ports {
+		if p.TargetPort == 161 || p.TargetPort == 162 {
 			return true
 		}
-		if strings.Contains(lower, "snmpv2") || strings.Contains(lower, "snmp_v2") || strings.Contains(lower, "v2c") {
-			return true
-		}
-		if strings.Contains(lower, "rocommunity") || strings.Contains(lower, "rwcommunity") {
+		parts := strings.Split(p.Raw, ":")
+		last := parts[len(parts)-1]
+		if last == "161" || last == "162" || last == "161/udp" || last == "162/udp" {
 			return true
 		}
 	}
 	return false
 }
 
-func hasWriteAccess(envs []string) bool {
-	for _, e := range envs {
-		lower := strings.ToLower(e)
-		if strings.Contains(lower, "rwcommunity") || strings.Contains(lower, "write") {
+func isDefaultCommunity(v string) bool {
+	low := strings.ToLower(strings.TrimSpace(v))
+	for _, dc := range defaultCommunities {
+		if low == dc {
 			return true
 		}
 	}
 	return false
 }
 
-func hasACL(envs []string) bool {
-	for _, e := range envs {
-		lower := strings.ToLower(e)
-		if strings.Contains(lower, "agentaddress") && (strings.Contains(lower, "127.0.0.1") || strings.Contains(lower, "localhost")) {
-			return true
-		}
-		if strings.Contains(lower, "com2sec") || strings.Contains(lower, "access") || strings.Contains(lower, "view") {
-			return true
-		}
-	}
-	return false
-}
-
-func analyzeService(svc compose.Service, file string) ServiceResult {
-	sr := ServiceResult{Service: svc.Name, File: file}
-
-	if !isSnmpImage(svc.Image) {
+func analyzeService(svc compose.Service) ServiceResult {
+	sr := ServiceResult{Service: svc.Name}
+	if !isSNMPService(svc) {
 		return sr
 	}
 
-	if hasDefaultCommunity(svc.Environment) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "critical",
-			Rule:    "default_community",
-			Message: fmt.Sprintf("Service '%s' uses default SNMP community string (public/private/community); change to a strong secret", svc.Name),
-		})
-	}
-
-	if usesV1V2(svc.Environment) && !hasV3Auth(svc.Environment) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "high",
-			Rule:    "snmpv1v2",
-			Message: fmt.Sprintf("Service '%s' uses SNMPv1/v2c which transmits community strings in cleartext; upgrade to SNMPv3", svc.Name),
-		})
-	}
-
-	for _, port := range svc.Ports {
-		if isSnmpPort(port) && port.IsAllInterfaces() {
+	if v, ok := envVal(svc, "SNMP_COMMUNITY", "COMMUNITY_STRING", "SNMP_COMMUNITY_STRING", "READ_COMMUNITY"); ok {
+		if isDefaultCommunity(v) {
 			sr.Findings = append(sr.Findings, Finding{
-				Level:   "high",
-				Rule:    "exposed_port",
-				Message: fmt.Sprintf("Service '%s' exposes SNMP port %d on all interfaces", svc.Name, port.TargetPort),
+				Service: svc.Name,
+				Rule:    ruleDefaultCommunity.ID,
+				Detail:  fmt.Sprintf("default community string in use (%s)", v),
 			})
 		}
 	}
 
-	if !hasV3Auth(svc.Environment) && !hasDefaultCommunity(svc.Environment) {
-		hasCommunity := false
-		for _, e := range svc.Environment {
-			lower := strings.ToLower(e)
-			if strings.Contains(lower, "communit") || strings.Contains(lower, "rocommunity") || strings.Contains(lower, "rwcommunity") {
-				hasCommunity = true
-			}
-		}
-		if !hasCommunity {
+	if v, ok := envVal(svc, "SNMP_VERSION", "SNMP_PROTOCOL_VERSION"); ok {
+		low := strings.ToLower(v)
+		if low == "1" || low == "2" || low == "2c" || low == "v1" || low == "v2" || low == "v2c" {
 			sr.Findings = append(sr.Findings, Finding{
-				Level:   "critical",
-				Rule:    "no_auth",
-				Message: fmt.Sprintf("Service '%s' SNMP has no authentication configured; no community string or SNMPv3 credentials", svc.Name),
+				Service: svc.Name,
+				Rule:    ruleSNMPv1v2.ID,
+				Detail:  fmt.Sprintf("SNMPv1/v2c in use (no encryption, community-based auth) version=%s", v),
 			})
 		}
 	}
 
-	if hasWriteAccess(svc.Environment) {
+	if hasSNMPPort(svc) {
 		sr.Findings = append(sr.Findings, Finding{
-			Level:   "high",
-			Rule:    "write_access",
-			Message: fmt.Sprintf("Service '%s' SNMP grants write access (rwcommunity); restrict to read-only unless necessary", svc.Name),
+			Service: svc.Name,
+			Rule:    ruleDefaultPort.ID,
+			Detail:  "SNMP exposed on default ports (161/162)",
 		})
 	}
 
-	if !hasACL(svc.Environment) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "medium",
-			Rule:    "missing_acl",
-			Message: fmt.Sprintf("Service '%s' SNMP has no access control (com2sec/view) configured; restrict source networks", svc.Name),
-		})
+	if v, ok := envVal(svc, "WRITE_COMMUNITY", "SNMP_WRITE_COMMUNITY", "RW_COMMUNITY"); ok {
+		if v != "" {
+			sr.Findings = append(sr.Findings, Finding{
+				Service: svc.Name,
+				Rule:    ruleWriteAccess.ID,
+				Detail:  "SNMP write access enabled (configuration change risk)",
+			})
+		}
+	}
+
+	if v, ok := envVal(svc, "SNMP_AUTH", "AUTH_PROTOCOL", "SNMP_AUTH_PROTOCOL"); ok {
+		low := strings.ToLower(v)
+		if low == "none" || low == "noauth" || low == "disabled" || low == "false" || low == "0" {
+			sr.Findings = append(sr.Findings, Finding{
+				Service: svc.Name,
+				Rule:    ruleNoAuth.ID,
+				Detail:  "SNMP authentication disabled",
+			})
+		}
+	}
+
+	if v, ok := envVal(svc, "SNMP_PRIV", "PRIV_PROTOCOL", "SNMP_PRIV_PROTOCOL", "SNMP_ENCRYPT"); ok {
+		low := strings.ToLower(v)
+		if low == "none" || low == "nopriv" || low == "disabled" || low == "false" || low == "0" {
+			sr.Findings = append(sr.Findings, Finding{
+				Service: svc.Name,
+				Rule:    ruleNoEncryption.ID,
+				Detail:  "SNMP privacy/encryption disabled (traffic visible in plaintext)",
+			})
+		}
 	}
 
 	return sr
 }
 
 func Analyze(c *collect.Collected) Report {
-	r := Report{Path: c.Root}
+	var results []ServiceResult
 	for _, cf := range c.ComposeFiles {
 		for _, svc := range cf.Services {
-			sr := analyzeService(svc, cf.Path)
-			r.Services = append(r.Services, sr)
+			sr := analyzeService(svc)
+			results = append(results, sr)
 		}
 	}
-	r.Summary = summarize(r.Services)
-	return r
+	return Report{Results: results, Summary: summarize(results)}
 }
 
-func summarize(services []ServiceResult) Summary {
-	s := Summary{TotalServices: len(services)}
-	for _, sr := range services {
-		for _, f := range sr.Findings {
+func summarize(results []ServiceResult) Summary {
+	s := Summary{ByRule: map[string]int{}}
+	s.TotalServices = len(results)
+	for _, r := range results {
+		if len(r.Findings) > 0 {
+			s.AffectedServices++
+		}
+		for _, f := range r.Findings {
 			s.TotalFindings++
-			switch f.Rule {
-			case "default_community":
-				s.DefaultCommunity++
-			case "snmpv1v2":
-				s.SNMPv1v2++
-			case "exposed_port":
-				s.ExposedPorts++
-			case "no_auth":
-				s.NoAuth++
-			case "write_access":
-				s.WriteAccess++
-			case "missing_acl":
-				s.MissingACL++
-			}
+			s.ByRule[f.Rule]++
 		}
 	}
 	return s
@@ -270,23 +190,25 @@ func summarize(services []ServiceResult) Summary {
 
 func FormatText(r Report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "SNMP Security Audit (%d services, %d findings)\n\n", r.Summary.TotalServices, r.Summary.TotalFindings)
-	fmt.Fprintf(&b, "  Default community strings: %d\n", r.Summary.DefaultCommunity)
-	fmt.Fprintf(&b, "  SNMPv1/v2c usage:          %d\n", r.Summary.SNMPv1v2)
-	fmt.Fprintf(&b, "  Exposed ports:             %d\n", r.Summary.ExposedPorts)
-	fmt.Fprintf(&b, "  No authentication:         %d\n", r.Summary.NoAuth)
-	fmt.Fprintf(&b, "  Write access:              %d\n", r.Summary.WriteAccess)
-	fmt.Fprintf(&b, "  Missing ACL:               %d\n\n", r.Summary.MissingACL)
-
-	for _, sr := range r.Services {
+	b.WriteString("SNMP Security Audit\n")
+	b.WriteString(strings.Repeat("=", 50) + "\n\n")
+	fmt.Fprintf(&b, "  Services scanned:   %d\n", r.Summary.TotalServices)
+	fmt.Fprintf(&b, "  Services affected:  %d\n", r.Summary.AffectedServices)
+	fmt.Fprintf(&b, "  Total findings:     %d\n\n", r.Summary.TotalFindings)
+	for _, sr := range r.Results {
 		if len(sr.Findings) == 0 {
 			continue
 		}
-		fmt.Fprintf(&b, "  Service: %s (%s)\n", sr.Service, sr.File)
+		fmt.Fprintf(&b, "  Service: %s\n", sr.Service)
 		for _, f := range sr.Findings {
-			fmt.Fprintf(&b, "    [%s] %s: %s\n", strings.ToUpper(f.Level), f.Rule, f.Message)
+			fmt.Fprintf(&b, "    [%s] %s\n", f.Rule, f.Detail)
 		}
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+func FormatJSON(r Report) string {
+	data, _ := json.MarshalIndent(r, "", "  ")
+	return string(data) + "\n"
 }

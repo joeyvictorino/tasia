@@ -1,6 +1,7 @@
 package ftpaudit
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -8,52 +9,22 @@ import (
 	"github.com/joeyvictorino/tasia/internal/collect/compose"
 )
 
-func mkCollected(services ...compose.Service) *collect.Collected {
-	return &collect.Collected{
-		ComposeFiles: []compose.File{
-			{Path: "docker-compose.yml", Services: services},
-		},
-	}
+func svc(name, image string, env []string, ports []compose.PortMapping) compose.Service {
+	return compose.Service{Name: name, Image: image, Environment: env, Ports: ports}
 }
 
-func svc(name string, opts ...func(*compose.Service)) compose.Service {
-	s := compose.Service{Name: name}
-	for _, o := range opts {
-		o(&s)
-	}
-	return s
+func port(raw string, target int) compose.PortMapping {
+	return compose.PortMapping{Raw: raw, TargetPort: target}
 }
 
-func withEnv(envs ...string) func(*compose.Service) {
-	return func(s *compose.Service) {
-		s.Environment = append(s.Environment, envs...)
-	}
+func collected(svcs ...compose.Service) *collect.Collected {
+	return &collect.Collected{ComposeFiles: []compose.File{{Path: "docker-compose.yml", Services: svcs}}}
 }
 
-func withImage(img string) func(*compose.Service) {
-	return func(s *compose.Service) {
-		s.Image = img
-	}
-}
-
-func withPorts(ports ...string) func(*compose.Service) {
-	return func(s *compose.Service) {
-		for _, p := range ports {
-			s.Ports = append(s.Ports, compose.PortMapping{Raw: p})
-		}
-	}
-}
-
-func withVolumes(vols ...string) func(*compose.Service) {
-	return func(s *compose.Service) {
-		s.Volumes = append(s.Volumes, vols...)
-	}
-}
-
-func findRule(results []ServiceResult, ruleID string) *Finding {
-	for _, r := range results {
-		for _, f := range r.Findings {
-			if f.Rule == ruleID {
+func findRule(results []ServiceResult, rule string) *Finding {
+	for _, sr := range results {
+		for _, f := range sr.Findings {
+			if f.Rule == rule {
 				return &f
 			}
 		}
@@ -61,170 +32,165 @@ func findRule(results []ServiceResult, ruleID string) *Finding {
 	return nil
 }
 
-func TestAnonymousLoginEnabled(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withEnv("FTP_ANONYMOUS=true")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-001") == nil {
-		t.Fatal("expected FTP-001 for anonymous login")
+func TestAnonymousEnabled(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"ANONYMOUS_ENABLE=true"}, nil)))
+	if f := findRule(r.Results, "FTP-001"); f == nil {
+		t.Fatal("expected FTP-001 for anonymous access")
 	}
 }
 
-func TestAnonymousLoginDisabled(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withEnv("FTP_ANONYMOUS=false")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-001") != nil {
-		t.Fatal("unexpected FTP-001 when anonymous disabled")
+func TestAnonymousDisabled(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"ANONYMOUS_ENABLE=false"}, nil)))
+	if f := findRule(r.Results, "FTP-001"); f != nil {
+		t.Fatal("should not flag disabled anonymous access")
 	}
 }
 
-func TestPlaintextPort(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withPorts("21:21")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-002") == nil {
-		t.Fatal("expected FTP-002 for plaintext FTP")
+func TestNoTLS(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"SSL_ENABLE=false"}, nil)))
+	if f := findRule(r.Results, "FTP-002"); f == nil {
+		t.Fatal("expected FTP-002 for TLS disabled")
 	}
 }
 
-func TestFTPSPortPresent(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withPorts("21:21", "990:990")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-002") != nil {
-		t.Fatal("unexpected FTP-002 when FTPS port present")
+func TestTLSEnabled(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"SSL_ENABLE=true"}, nil)))
+	if f := findRule(r.Results, "FTP-002"); f != nil {
+		t.Fatal("should not flag enabled TLS")
 	}
 }
 
-func TestNoTLSConfig(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("proftpd")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-003") == nil {
-		t.Fatal("expected FTP-003 for missing TLS")
+func TestDefaultPort21(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", nil, []compose.PortMapping{port("21:21", 21)})))
+	if f := findRule(r.Results, "FTP-003"); f == nil {
+		t.Fatal("expected FTP-003 for port 21")
 	}
 }
 
-func TestTLSConfigured(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withEnv("SSL_ENABLE=true")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-003") != nil {
-		t.Fatal("unexpected FTP-003 when SSL configured")
+func TestDefaultPort20(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", nil, []compose.PortMapping{port("20:20", 20)})))
+	if f := findRule(r.Results, "FTP-003"); f == nil {
+		t.Fatal("expected FTP-003 for port 20")
 	}
 }
 
-func TestTLSCertVolume(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withVolumes("./certs:/etc/ssl/certs")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-003") != nil {
-		t.Fatal("unexpected FTP-003 when cert volume mounted")
+func TestNonDefaultPort(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", nil, []compose.PortMapping{port("2121:2121", 2121)})))
+	if f := findRule(r.Results, "FTP-003"); f != nil {
+		t.Fatal("should not flag non-default port")
 	}
 }
 
-func TestWritableAnonymous(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withEnv("ANON_UPLOAD_ENABLE=true")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-004") == nil {
-		t.Fatal("expected FTP-004 for writable anonymous")
+func TestWriteEnabled(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"WRITE_ENABLE=yes"}, nil)))
+	if f := findRule(r.Results, "FTP-004"); f == nil {
+		t.Fatal("expected FTP-004 for write enabled")
+	}
+}
+
+func TestWriteDisabled(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"WRITE_ENABLE=no"}, nil)))
+	if f := findRule(r.Results, "FTP-004"); f != nil {
+		t.Fatal("should not flag disabled write")
+	}
+}
+
+func TestWeakUsername(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"FTP_USER=admin"}, nil)))
+	if f := findRule(r.Results, "FTP-005"); f == nil {
+		t.Fatal("expected FTP-005 for weak username")
+	}
+}
+
+func TestStrongUsername(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"FTP_USER=deploy_svc"}, nil)))
+	if f := findRule(r.Results, "FTP-005"); f != nil {
+		t.Fatal("should not flag non-default username")
 	}
 }
 
 func TestPassivePortRange(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withPorts("21:21")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-005") == nil {
-		t.Fatal("expected FTP-005 for missing passive port range")
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"PASV_MIN_PORT=30000", "PASV_MAX_PORT=31000"}, nil)))
+	if f := findRule(r.Results, "FTP-006"); f == nil {
+		t.Fatal("expected FTP-006 for passive port range")
 	}
 }
 
-func TestPassivePortRangeConfigured(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withPorts("21:21"), withEnv("PASV_MIN_PORT=30000")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-005") != nil {
-		t.Fatal("unexpected FTP-005 when passive ports configured")
-	}
-}
-
-func TestDefaultCredentials(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd:latest")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-006") == nil {
-		t.Fatal("expected FTP-006 for default credentials")
-	}
-}
-
-func TestCredentialsConfigured(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withEnv("FTP_USER=admin", "FTP_PASSWORD=secret")))
-	r := Analyze(c)
-	if findRule(r.Results, "FTP-006") != nil {
-		t.Fatal("unexpected FTP-006 when credentials configured")
-	}
-}
-
-func TestNonFTPServiceIgnored(t *testing.T) {
-	c := mkCollected(svc("postgres", withImage("postgres:15")))
-	r := Analyze(c)
+func TestNonFTPIgnored(t *testing.T) {
+	r := Analyze(collected(svc("web", "nginx:latest", []string{"ANONYMOUS_ENABLE=true"}, nil)))
 	if r.Summary.TotalFindings != 0 {
-		t.Fatalf("expected 0 findings, got %d", r.Summary.TotalFindings)
+		t.Fatal("should ignore non-FTP service")
 	}
 }
 
-func TestSummaryAffectedCount(t *testing.T) {
-	c := mkCollected(
-		svc("ftp", withImage("vsftpd"), withEnv("FTP_ANONYMOUS=true")),
-		svc("db", withImage("postgres:15")),
-	)
-	r := Analyze(c)
+func TestIsFTPService(t *testing.T) {
+	cases := []struct {
+		image string
+		want  bool
+	}{
+		{"vsftpd", true},
+		{"proftpd/server", true},
+		{"pure-ftpd:latest", true},
+		{"filezilla-server", true},
+		{"nginx:latest", false},
+	}
+	for _, c := range cases {
+		got := isFTPService(compose.Service{Image: c.image})
+		if got != c.want {
+			t.Errorf("isFTPService(%q) = %v, want %v", c.image, got, c.want)
+		}
+	}
+}
+
+func TestSummaryCounts(t *testing.T) {
+	r := Analyze(collected(
+		svc("ftp1", "vsftpd", []string{"ANONYMOUS_ENABLE=true", "SSL_ENABLE=false"}, nil),
+		svc("web", "nginx", nil, nil),
+	))
+	if r.Summary.TotalServices != 2 {
+		t.Errorf("TotalServices = %d, want 2", r.Summary.TotalServices)
+	}
 	if r.Summary.AffectedServices != 1 {
-		t.Fatalf("expected 1 affected, got %d", r.Summary.AffectedServices)
+		t.Errorf("AffectedServices = %d, want 1", r.Summary.AffectedServices)
+	}
+	if r.Summary.TotalFindings != 2 {
+		t.Errorf("TotalFindings = %d, want 2", r.Summary.TotalFindings)
 	}
 }
 
-func TestFormatTextContainsHeader(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"), withEnv("FTP_ANONYMOUS=true")))
-	r := Analyze(c)
+func TestFormatTextHeader(t *testing.T) {
+	r := Analyze(collected())
 	text := FormatText(r)
-	if !strings.Contains(text, "FTP Server") {
-		t.Fatal("expected header in text output")
+	if !strings.Contains(text, "FTP Server Security Audit") {
+		t.Error("missing header")
 	}
 }
 
 func TestFormatJSONValid(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd")))
-	r := Analyze(c)
-	j := FormatJSON(r)
-	if !strings.Contains(j, "Results") {
-		t.Fatal("expected Results in JSON")
-	}
-}
-
-func TestMultipleFindings(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("vsftpd"),
-		withEnv("FTP_ANONYMOUS=true", "ANON_UPLOAD_ENABLE=true"),
-		withPorts("21:21"),
-	))
-	r := Analyze(c)
-	if r.Summary.TotalFindings < 3 {
-		t.Fatalf("expected at least 3 findings, got %d", r.Summary.TotalFindings)
-	}
-}
-
-func TestProFTPDDetected(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("proftpd:latest")))
-	r := Analyze(c)
-	if r.Summary.TotalFindings == 0 {
-		t.Fatal("expected findings for proftpd")
-	}
-}
-
-func TestPureFTPDDetected(t *testing.T) {
-	c := mkCollected(svc("ftp", withImage("pure-ftpd:latest")))
-	r := Analyze(c)
-	if r.Summary.TotalFindings == 0 {
-		t.Fatal("expected findings for pure-ftpd")
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{"ANONYMOUS_ENABLE=true"}, nil)))
+	var out Report
+	if err := json.Unmarshal([]byte(FormatJSON(r)), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
 	}
 }
 
 func TestEmptyCollected(t *testing.T) {
-	c := mkCollected()
-	r := Analyze(c)
-	if r.Summary.TotalFindings != 0 {
-		t.Fatalf("expected 0 findings, got %d", r.Summary.TotalFindings)
+	r := Analyze(&collect.Collected{})
+	if r.Summary.TotalServices != 0 || r.Summary.TotalFindings != 0 {
+		t.Error("expected empty results for empty collected")
+	}
+}
+
+func TestAllFindings(t *testing.T) {
+	r := Analyze(collected(svc("ftp", "vsftpd", []string{
+		"ANONYMOUS_ENABLE=true",
+		"SSL_ENABLE=false",
+		"WRITE_ENABLE=yes",
+		"FTP_USER=admin",
+		"PASV_MIN_PORT=30000",
+		"PASV_MAX_PORT=31000",
+	}, []compose.PortMapping{port("21:21", 21)})))
+	if r.Summary.TotalFindings != 6 {
+		t.Errorf("expected 6 findings, got %d", r.Summary.TotalFindings)
 	}
 }

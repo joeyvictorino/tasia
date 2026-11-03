@@ -32,23 +32,23 @@ type Report struct {
 	Summary Summary
 }
 
-type ruleInfo struct {
-	ID string
-}
+type ruleInfo struct{ ID string }
 
-var ruleAnonymousLogin = ruleInfo{ID: "FTP-001"}
-var rulePlaintextPort = ruleInfo{ID: "FTP-002"}
-var ruleNoTLS = ruleInfo{ID: "FTP-003"}
-var ruleWritableAnonymous = ruleInfo{ID: "FTP-004"}
-var rulePassivePortRange = ruleInfo{ID: "FTP-005"}
-var ruleDefaultCredentials = ruleInfo{ID: "FTP-006"}
+var ruleAnonymousAccess = ruleInfo{ID: "FTP-001"}
+var ruleNoTLS = ruleInfo{ID: "FTP-002"}
+var ruleDefaultPort = ruleInfo{ID: "FTP-003"}
+var ruleWriteEnabled = ruleInfo{ID: "FTP-004"}
+var ruleWeakAuth = ruleInfo{ID: "FTP-005"}
+var rulePassiveMode = ruleInfo{ID: "FTP-006"}
 
 func isFTPService(svc compose.Service) bool {
 	combined := strings.ToLower(svc.Image + " " + strings.Join(svc.Command, " ") + " " + strings.Join(svc.Entrypoint, " "))
 	for _, e := range svc.Environment {
 		combined += " " + strings.ToLower(e)
 	}
-	return strings.Contains(combined, "ftp") || strings.Contains(combined, "vsftpd") || strings.Contains(combined, "proftpd") || strings.Contains(combined, "pure-ftpd")
+	return strings.Contains(combined, "ftp") || strings.Contains(combined, "vsftpd") ||
+		strings.Contains(combined, "proftpd") || strings.Contains(combined, "pure-ftpd") ||
+		strings.Contains(combined, "filezilla")
 }
 
 func envVal(svc compose.Service, keys ...string) (string, bool) {
@@ -67,91 +67,94 @@ func envVal(svc compose.Service, keys ...string) (string, bool) {
 	return "", false
 }
 
-func envExists(svc compose.Service, keys ...string) bool {
-	_, found := envVal(svc, keys...)
-	return found
+func isTruthy(v string) bool {
+	low := strings.ToLower(v)
+	return low == "true" || low == "1" || low == "yes"
 }
 
-func hasPort(svc compose.Service, port string) bool {
+func isFalsy(v string) bool {
+	low := strings.ToLower(v)
+	return low == "false" || low == "0" || low == "no" || low == "disabled"
+}
+
+func hasFTPPort(svc compose.Service) bool {
 	for _, p := range svc.Ports {
-		if strings.Contains(p.Raw, port) {
+		if p.TargetPort == 21 || p.TargetPort == 20 {
+			return true
+		}
+		parts := strings.Split(p.Raw, ":")
+		last := parts[len(parts)-1]
+		if last == "21" || last == "20" {
 			return true
 		}
 	}
 	return false
 }
 
-func hasVolumePath(svc compose.Service, needle string) bool {
-	for _, v := range svc.Volumes {
-		if strings.Contains(strings.ToLower(v), needle) {
-			return true
-		}
-	}
-	return false
-}
-
-func analyzeService(svc compose.Service, file string) ServiceResult {
+func analyzeService(svc compose.Service) ServiceResult {
 	sr := ServiceResult{Service: svc.Name}
-
 	if !isFTPService(svc) {
 		return sr
 	}
 
-	if v, ok := envVal(svc, "FTP_ANONYMOUS", "ANONYMOUS_ENABLE", "ALLOW_ANONYMOUS"); ok {
-		low := strings.ToLower(v)
-		if low == "true" || low == "1" || low == "yes" {
+	if v, ok := envVal(svc, "ANONYMOUS_ENABLE", "FTP_ANONYMOUS", "ALLOW_ANONYMOUS", "ANONYMOUS_ACCESS"); ok {
+		if isTruthy(v) {
 			sr.Findings = append(sr.Findings, Finding{
 				Service: svc.Name,
-				Rule:    ruleAnonymousLogin.ID,
-				Detail:  fmt.Sprintf("anonymous FTP login enabled (%s)", v),
+				Rule:    ruleAnonymousAccess.ID,
+				Detail:  fmt.Sprintf("anonymous FTP access enabled (%s)", v),
 			})
 		}
 	}
 
-	if hasPort(svc, "21") && !hasPort(svc, "990") {
-		sr.Findings = append(sr.Findings, Finding{
-			Service: svc.Name,
-			Rule:    rulePlaintextPort.ID,
-			Detail:  "FTP port 21 exposed without implicit FTPS port 990",
-		})
-	}
-
-	if !envExists(svc, "FTP_TLS", "SSL_ENABLE", "TLS_CERT", "FTP_SSL", "FTPS_ENABLE") && !hasVolumePath(svc, "tls") && !hasVolumePath(svc, "ssl") && !hasVolumePath(svc, "cert") {
-		sr.Findings = append(sr.Findings, Finding{
-			Service: svc.Name,
-			Rule:    ruleNoTLS.ID,
-			Detail:  "no TLS/SSL configuration detected for FTP service",
-		})
-	}
-
-	if v, ok := envVal(svc, "ANON_UPLOAD_ENABLE", "FTP_ANON_WRITE", "ANONYMOUS_WRITE"); ok {
-		low := strings.ToLower(v)
-		if low == "true" || low == "1" || low == "yes" {
+	if v, ok := envVal(svc, "SSL_ENABLE", "FTP_TLS", "TLS_ENABLE", "FTPS_ENABLE", "FTP_SSL"); ok {
+		if isFalsy(v) {
 			sr.Findings = append(sr.Findings, Finding{
 				Service: svc.Name,
-				Rule:    ruleWritableAnonymous.ID,
-				Detail:  "anonymous users can upload files",
+				Rule:    ruleNoTLS.ID,
+				Detail:  "FTP TLS/SSL disabled (credentials transmitted in plaintext)",
 			})
 		}
 	}
 
-	if hasPort(svc, "21") && !envExists(svc, "PASV_MIN_PORT", "PASSIVE_PORT_RANGE", "FTP_PASSIVE_PORTS") {
+	if hasFTPPort(svc) {
 		sr.Findings = append(sr.Findings, Finding{
 			Service: svc.Name,
-			Rule:    rulePassivePortRange.ID,
-			Detail:  "no passive port range configured (may expose random ports)",
+			Rule:    ruleDefaultPort.ID,
+			Detail:  "FTP exposed on default ports (20/21)",
 		})
 	}
 
-	imgLower := strings.ToLower(svc.Image)
-	if strings.Contains(imgLower, "vsftpd") || strings.Contains(imgLower, "proftpd") || strings.Contains(imgLower, "pure-ftpd") || strings.Contains(imgLower, "ftp") {
-		hasAuth := envExists(svc, "FTP_USER", "FTP_PASSWORD", "FTP_USERS", "USER_FILE") || hasVolumePath(svc, "passwd") || hasVolumePath(svc, "user")
-		if !hasAuth {
+	if v, ok := envVal(svc, "WRITE_ENABLE", "FTP_WRITE", "ALLOW_UPLOAD", "ANON_UPLOAD_ENABLE"); ok {
+		if isTruthy(v) {
 			sr.Findings = append(sr.Findings, Finding{
 				Service: svc.Name,
-				Rule:    ruleDefaultCredentials.ID,
-				Detail:  "FTP server without explicit user/password configuration",
+				Rule:    ruleWriteEnabled.ID,
+				Detail:  "FTP write/upload access enabled",
 			})
+		}
+	}
+
+	if v, ok := envVal(svc, "FTP_USER", "FTP_USERNAME"); ok {
+		low := strings.ToLower(v)
+		if low == "admin" || low == "ftp" || low == "user" || low == "root" || low == "anonymous" {
+			sr.Findings = append(sr.Findings, Finding{
+				Service: svc.Name,
+				Rule:    ruleWeakAuth.ID,
+				Detail:  fmt.Sprintf("weak/default FTP username (%s)", v),
+			})
+		}
+	}
+
+	if v, ok := envVal(svc, "PASV_MIN_PORT", "PASSIVE_MIN_PORT"); ok {
+		if v != "" {
+			if _, ok2 := envVal(svc, "PASV_MAX_PORT", "PASSIVE_MAX_PORT"); ok2 {
+				sr.Findings = append(sr.Findings, Finding{
+					Service: svc.Name,
+					Rule:    rulePassiveMode.ID,
+					Detail:  "FTP passive mode port range exposed (wide port range increases attack surface)",
+				})
+			}
 		}
 	}
 
@@ -162,7 +165,7 @@ func Analyze(c *collect.Collected) Report {
 	var results []ServiceResult
 	for _, cf := range c.ComposeFiles {
 		for _, svc := range cf.Services {
-			sr := analyzeService(svc, cf.Path)
+			sr := analyzeService(svc)
 			results = append(results, sr)
 		}
 	}
@@ -191,7 +194,6 @@ func FormatText(r Report) string {
 	fmt.Fprintf(&b, "  Services scanned:   %d\n", r.Summary.TotalServices)
 	fmt.Fprintf(&b, "  Services affected:  %d\n", r.Summary.AffectedServices)
 	fmt.Fprintf(&b, "  Total findings:     %d\n\n", r.Summary.TotalFindings)
-
 	for _, sr := range r.Results {
 		if len(sr.Findings) == 0 {
 			continue
