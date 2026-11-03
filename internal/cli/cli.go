@@ -454,6 +454,10 @@ func Run(args []string) error {
 		return runProxyconfig(args[1:])
 	case "backupexpose":
 		return runBackupexpose(args[1:])
+	case "tlsconfig":
+		return runTlsconfig(args[1:])
+	case "corsconfig":
+		return runCorsconfig(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
