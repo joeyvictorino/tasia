@@ -596,6 +596,8 @@ func Run(args []string) error {
 		return runInfluxdbaudit(args[1:])
 	case "neo4jaudit":
 		return runNeo4jaudit(args[1:])
+	case "nomadaudit":
+		return runNomadaudit(args[1:])
 	case "clickhouseaudit":
 		return runClickhouseaudit(args[1:])
 	case "cockroachdbaudit":
