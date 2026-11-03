@@ -578,6 +578,8 @@ func Run(args []string) error {
 		return runNfsaudit(args[1:])
 	case "memcachedaudit":
 		return runMemcachedaudit(args[1:])
+	case "etcdaudit":
+		return runEtcdaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
