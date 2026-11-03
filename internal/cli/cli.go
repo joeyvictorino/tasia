@@ -626,6 +626,10 @@ func Run(args []string) error {
 		return runMilvusaudit(args[1:])
 	case "surrealdbaudit":
 		return runSurrealdbaudit(args[1:])
+	case "qdrantaudit":
+		return runQdrantaudit(args[1:])
+	case "dynamodbaudit":
+		return runDynamodbaudit(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
