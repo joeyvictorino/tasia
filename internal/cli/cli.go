@@ -534,6 +534,10 @@ func Run(args []string) error {
 		return runOverlayfs(args[1:])
 	case "nonroot":
 		return runNonroot(args[1:])
+	case "execform":
+		return runExecform(args[1:])
+	case "copyaudit":
+		return runCopyaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
