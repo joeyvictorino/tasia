@@ -622,6 +622,10 @@ func Run(args []string) error {
 		return runTimescaledbaudit(args[1:])
 	case "prometheusaudit":
 		return runPrometheusaudit(args[1:])
+	case "milvusaudit":
+		return runMilvusaudit(args[1:])
+	case "surrealdbaudit":
+		return runSurrealdbaudit(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("tasia %s (commit %s, built %s)\n", versionString(), Commit, Date)
 		return nil
