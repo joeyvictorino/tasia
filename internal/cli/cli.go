@@ -460,6 +460,10 @@ func Run(args []string) error {
 		return runCorsconfig(args[1:])
 	case "socketbind":
 		return runSocketbind(args[1:])
+	case "signalforward":
+		return runSignalforward(args[1:])
+	case "portrange":
+		return runPortrange(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
