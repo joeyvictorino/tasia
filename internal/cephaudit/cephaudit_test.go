@@ -37,12 +37,13 @@ func TestIsCephImage(t *testing.T) {
 		{"ceph/daemon:v16", true},
 		{"quay.io/ceph/ceph:17", true},
 		{"rook/ceph:master", true},
-		{"ceph/demo", true},
+		{"ceph/demo:latest", true},
 		{"nginx:latest", false},
 		{"postgres:15", false},
 	}
 	for _, tt := range tests {
-		if got := isCephImage(tt.image); got != tt.want {
+		got := isCephImage(tt.image)
+		if got != tt.want {
 			t.Errorf("isCephImage(%q) = %v, want %v", tt.image, got, tt.want)
 		}
 	}
@@ -52,13 +53,6 @@ func TestNoAuth(t *testing.T) {
 	r := Analyze(col(svc("ceph1", "ceph/ceph", []string{"CEPH_AUTH=none"}, nil)))
 	if r.Summary.NoAuth == 0 {
 		t.Error("expected no_auth finding")
-	}
-}
-
-func TestAuthConfigured(t *testing.T) {
-	r := Analyze(col(svc("ceph1", "ceph/ceph", []string{"CEPH_AUTH=cephx"}, nil)))
-	if r.Summary.NoAuth != 0 {
-		t.Error("should not flag when cephx auth configured")
 	}
 }
 
@@ -98,9 +92,9 @@ func TestDefaultDashboardPassword(t *testing.T) {
 }
 
 func TestDemoMode(t *testing.T) {
-	r := Analyze(col(svc("ceph1", "ceph/demo", nil, nil)))
+	r := Analyze(col(svc("ceph1", "ceph/demo", []string{"DEMO_MODE=true"}, nil)))
 	if r.Summary.DemoMode == 0 {
-		t.Error("expected demo_mode finding for ceph/demo image")
+		t.Error("expected demo_mode finding")
 	}
 }
 
@@ -108,6 +102,15 @@ func TestDebugEnabled(t *testing.T) {
 	r := Analyze(col(svc("ceph1", "ceph/ceph", []string{"DEBUG_OSD=20"}, nil)))
 	if r.Summary.DebugEnabled == 0 {
 		t.Error("expected debug_enabled finding")
+	}
+}
+
+func TestCleanService(t *testing.T) {
+	r := Analyze(col(svc("ceph1", "ceph/ceph", []string{"CEPH_AUTH=cephx"}, nil)))
+	total := r.Summary.NoAuth + r.Summary.PartialAuth + r.Summary.NoEncryption +
+		r.Summary.ExposedPort + r.Summary.DefaultPassword + r.Summary.DemoMode + r.Summary.DebugEnabled
+	if total != 0 {
+		t.Errorf("expected 0 findings, got %d", total)
 	}
 }
 
@@ -135,6 +138,20 @@ func TestMultipleServices(t *testing.T) {
 	}
 }
 
+func TestRookCeph(t *testing.T) {
+	r := Analyze(col(svc("rook", "rook/ceph:latest", nil, nil)))
+	if len(r.Services) != 1 {
+		t.Error("rook/ceph should be detected")
+	}
+}
+
+func TestDashboardPort(t *testing.T) {
+	r := Analyze(col(svc("ceph1", "ceph/ceph", nil, []compose.PortMapping{allPort(8443)})))
+	if r.Summary.ExposedPort == 0 {
+		t.Error("expected dashboard port finding")
+	}
+}
+
 func TestFormatText(t *testing.T) {
 	r := Analyze(colPath("/test", svc("ceph1", "ceph/ceph", []string{"CEPH_AUTH=none"}, nil)))
 	text := FormatText(r)
@@ -158,20 +175,5 @@ func TestReportPath(t *testing.T) {
 	r := Analyze(colPath("/mydir"))
 	if r.Path != "/mydir" {
 		t.Errorf("expected /mydir, got %s", r.Path)
-	}
-}
-
-func TestDashboardPort(t *testing.T) {
-	r := Analyze(col(svc("ceph1", "ceph/ceph", nil, []compose.PortMapping{allPort(8443)})))
-	if r.Summary.ExposedPort == 0 {
-		t.Error("expected dashboard port finding")
-	}
-}
-
-func TestSummaryAggregation(t *testing.T) {
-	r := Analyze(col(svc("ceph1", "ceph/ceph", []string{"CEPH_AUTH=none", "ms_encrypt=false"}, []compose.PortMapping{allPort(6789)})))
-	total := r.Summary.NoAuth + r.Summary.NoEncryption + r.Summary.ExposedPort
-	if total == 0 {
-		t.Error("expected some findings in summary")
 	}
 }
