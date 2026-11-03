@@ -482,6 +482,14 @@ func Run(args []string) error {
 		return runDbus(args[1:])
 	case "pipeclean":
 		return runPipeclean(args[1:])
+	case "ambient":
+		return runAmbient(args[1:])
+	case "securityopt":
+		return runSecurityopt(args[1:])
+	case "affinity":
+		return runAffinity(args[1:])
+	case "linklocal":
+		return runLinklocal(args[1:])
 	case "cgroupescape":
 		return runCgroupescape(args[1:])
 	case "timesync":
