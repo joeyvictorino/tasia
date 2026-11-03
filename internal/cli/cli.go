@@ -538,6 +538,10 @@ func Run(args []string) error {
 		return runExecform(args[1:])
 	case "copyaudit":
 		return runCopyaudit(args[1:])
+	case "ldapaudit":
+		return runLdapaudit(args[1:])
+	case "smtpaudit":
+		return runSmtpaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
