@@ -568,6 +568,10 @@ func Run(args []string) error {
 		return runPostgresaudit(args[1:])
 	case "mysqlaudit":
 		return runMysqlaudit(args[1:])
+	case "ftpaudit":
+		return runFtpaudit(args[1:])
+	case "sshaudit":
+		return runSshaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
