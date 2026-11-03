@@ -592,6 +592,10 @@ func Run(args []string) error {
 		return runCephaudit(args[1:])
 	case "cassandraaudit":
 		return runCassandraaudit(args[1:])
+	case "influxdbaudit":
+		return runInfluxdbaudit(args[1:])
+	case "neo4jaudit":
+		return runNeo4jaudit(args[1:])
 	case "vpnaudit":
 		return runVpnaudit(args[1:])
 	case "env-template", "envtemplate":
