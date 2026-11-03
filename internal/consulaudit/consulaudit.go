@@ -20,12 +20,11 @@ type ServiceResult struct {
 }
 
 type Summary struct {
-	NoACL          int `json:"no_acl"`
-	NoTLS          int `json:"no_tls"`
-	ExposedPort    int `json:"exposed_port"`
-	DefaultToken   int `json:"default_token"`
-	NoEncryptGossip int `json:"no_encrypt_gossip"`
-	DevMode        int `json:"dev_mode"`
+	NoACL            int `json:"no_acl"`
+	NoGossipEncrypt  int `json:"no_gossip_encrypt"`
+	NoTLS            int `json:"no_tls"`
+	ExposedPort      int `json:"exposed_port"`
+	DevMode          int `json:"dev_mode"`
 }
 
 type Report struct {
@@ -34,89 +33,85 @@ type Report struct {
 	Summary  Summary         `json:"summary"`
 }
 
+var consulImages = []string{
+	"consul", "hashicorp/consul", "bitnami/consul",
+}
+
 func isConsulImage(image string) bool {
-	lower := strings.ToLower(image)
-	parts := []string{
-		"consul", "hashicorp/consul", "library/consul",
-		"bitnami/consul", "consul-enterprise",
-	}
-	for _, p := range parts {
-		if strings.Contains(lower, p) {
+	img := strings.ToLower(image)
+	for _, ci := range consulImages {
+		if strings.Contains(img, ci) {
 			return true
 		}
 	}
 	return false
 }
 
-func hasACL(envs []string, args []string) bool {
+func hasACL(envs []string, command []string) bool {
 	for _, e := range envs {
 		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "CONSUL_HTTP_TOKEN") ||
-			strings.Contains(upper, "ACL_ENABLED=TRUE") ||
-			strings.Contains(upper, "ACL_DEFAULT_POLICY") {
+		if strings.Contains(upper, "CONSUL_ACL_ENABLED=TRUE") ||
+			strings.Contains(upper, "CONSUL_LOCAL_CONFIG") && strings.Contains(upper, "ACL") && strings.Contains(upper, "ENABLED") {
 			return true
 		}
 	}
-	for _, a := range args {
-		if strings.Contains(a, "-acl-enabled") || strings.Contains(a, "acl.enabled=true") {
+	for _, c := range command {
+		lower := strings.ToLower(c)
+		if strings.Contains(lower, "acl") && strings.Contains(lower, "enabled") {
 			return true
 		}
 	}
 	return false
 }
 
-func hasTLS(envs []string) bool {
+func hasGossipEncryption(envs []string, command []string) bool {
 	for _, e := range envs {
 		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "CONSUL_CACERT") ||
+		if strings.Contains(upper, "CONSUL_GOSSIP_ENCRYPTION_KEY") ||
+			strings.Contains(upper, "GOSSIP_ENCRYPTION") ||
+			strings.Contains(upper, "ENCRYPT=") {
+			return true
+		}
+	}
+	for _, c := range command {
+		if strings.Contains(c, "-encrypt") {
+			return true
+		}
+	}
+	return false
+}
+
+func hasTLS(envs []string, command []string) bool {
+	for _, e := range envs {
+		upper := strings.ToUpper(e)
+		if strings.Contains(upper, "CONSUL_TLS") ||
+			strings.Contains(upper, "CONSUL_CACERT") ||
 			strings.Contains(upper, "CONSUL_CLIENT_CERT") ||
-			strings.Contains(upper, "TLS_CERT_FILE") ||
-			strings.Contains(upper, "CONSUL_TLS_ENABLE=TRUE") {
+			strings.Contains(upper, "CONSUL_HTTP_SSL=TRUE") ||
+			strings.Contains(upper, "CONSUL_GRPC_TLS") {
+			return true
+		}
+	}
+	for _, c := range command {
+		lower := strings.ToLower(c)
+		if strings.Contains(lower, "-ca-file") || strings.Contains(lower, "-cert-file") ||
+			strings.Contains(lower, "tls") {
 			return true
 		}
 	}
 	return false
 }
 
-func hasGossipEncryption(envs []string, args []string) bool {
-	for _, e := range envs {
-		upper := strings.ToUpper(e)
-		if strings.Contains(upper, "CONSUL_ENCRYPT") || strings.Contains(upper, "GOSSIP_ENCRYPTION_KEY") {
-			return true
-		}
-	}
-	for _, a := range args {
-		if strings.Contains(a, "-encrypt") {
-			return true
-		}
-	}
-	return false
-}
-
-func hasDefaultToken(envs []string) bool {
-	defaults := []string{"anonymous", "master", "default", "root", "changeme"}
+func isDevMode(envs []string, command []string) bool {
 	for _, e := range envs {
 		lower := strings.ToLower(e)
-		if strings.Contains(lower, "consul_http_token=") || strings.Contains(lower, "acl_master_token=") {
-			for _, d := range defaults {
-				if strings.Contains(lower, "="+d) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func isDevMode(envs []string, args []string) bool {
-	for _, a := range args {
-		if a == "-dev" || a == "--dev" {
+		if strings.Contains(lower, "consul_dev=true") ||
+			strings.Contains(lower, "consul_development=true") {
 			return true
 		}
 	}
-	for _, e := range envs {
-		if strings.Contains(strings.ToUpper(e), "CONSUL_DEV=TRUE") ||
-			strings.Contains(strings.ToUpper(e), "CONSUL_LOCAL_CONFIG") && strings.Contains(strings.ToLower(e), "dev") {
+	for _, c := range command {
+		if c == "-dev" || c == "--dev" || strings.Contains(c, "agent -dev") {
 			return true
 		}
 	}
@@ -126,58 +121,56 @@ func isDevMode(envs []string, args []string) bool {
 func analyzeService(svc compose.Service) ServiceResult {
 	sr := ServiceResult{Service: svc.Name}
 	envs := svc.Environment
-	args := svc.Command
 
-	if !hasACL(envs, args) {
+	if !hasACL(envs, svc.Command) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "high",
 			Rule:    "consul_no_acl",
-			Message: fmt.Sprintf("service %q: Consul has no ACL enabled — any client can read/write the KV store", svc.Name),
+			Message: fmt.Sprintf("service %q: Consul ACLs not enabled", svc.Name),
 		})
 	}
 
-	if !hasTLS(envs) {
+	if !hasGossipEncryption(envs, svc.Command) {
+		sr.Findings = append(sr.Findings, Finding{
+			Level:   "high",
+			Rule:    "consul_no_gossip_encrypt",
+			Message: fmt.Sprintf("service %q: Consul gossip encryption not configured", svc.Name),
+		})
+	}
+
+	if !hasTLS(envs, svc.Command) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "high",
 			Rule:    "consul_no_tls",
-			Message: fmt.Sprintf("service %q: Consul running without TLS — API and gossip traffic is plaintext", svc.Name),
+			Message: fmt.Sprintf("service %q: Consul running without TLS", svc.Name),
 		})
 	}
 
-	if !hasGossipEncryption(envs, args) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "medium",
-			Rule:    "consul_no_gossip_encrypt",
-			Message: fmt.Sprintf("service %q: Consul gossip protocol is not encrypted", svc.Name),
-		})
+	exposedPorts := map[int]string{
+		8500: "Consul HTTP API",
+		8501: "Consul HTTPS API",
+		8600: "Consul DNS",
+		8300: "Consul server RPC",
+		8301: "Consul Serf LAN",
+		8302: "Consul Serf WAN",
 	}
-
-	for _, pm := range svc.Ports {
-		port := pm.TargetPort
-		if port == 8500 || port == 8501 || port == 8600 || port == 8300 || port == 8301 || port == 8302 {
-			if pm.IsAllInterfaces() {
+	for _, p := range svc.Ports {
+		if desc, ok := exposedPorts[p.TargetPort]; ok {
+			if p.IsAllInterfaces() {
 				sr.Findings = append(sr.Findings, Finding{
 					Level:   "high",
 					Rule:    "consul_exposed_port",
-					Message: fmt.Sprintf("service %q: Consul port %d exposed on all interfaces", svc.Name, port),
+					Message: fmt.Sprintf("service %q: port %d (%s) exposed on all interfaces", svc.Name, p.TargetPort, desc),
 				})
 			}
 		}
 	}
 
-	if hasDefaultToken(envs) {
-		sr.Findings = append(sr.Findings, Finding{
-			Level:   "critical",
-			Rule:    "consul_default_token",
-			Message: fmt.Sprintf("service %q: Consul using default/weak ACL token", svc.Name),
-		})
-	}
-
-	if isDevMode(envs, args) {
+	if isDevMode(envs, svc.Command) {
 		sr.Findings = append(sr.Findings, Finding{
 			Level:   "critical",
 			Rule:    "consul_dev_mode",
-			Message: fmt.Sprintf("service %q: Consul running in development mode — all security is disabled", svc.Name),
+			Message: fmt.Sprintf("service %q: Consul running in development mode", svc.Name),
 		})
 	}
 
@@ -197,14 +190,12 @@ func Analyze(c *collect.Collected) Report {
 				switch f.Rule {
 				case "consul_no_acl":
 					r.Summary.NoACL++
+				case "consul_no_gossip_encrypt":
+					r.Summary.NoGossipEncrypt++
 				case "consul_no_tls":
 					r.Summary.NoTLS++
 				case "consul_exposed_port":
 					r.Summary.ExposedPort++
-				case "consul_default_token":
-					r.Summary.DefaultToken++
-				case "consul_no_gossip_encrypt":
-					r.Summary.NoEncryptGossip++
 				case "consul_dev_mode":
 					r.Summary.DevMode++
 				}
@@ -236,9 +227,9 @@ func FormatText(r Report) string {
 		b.WriteString("\n")
 	}
 
-	fmt.Fprintf(&b, "  Summary: no_acl=%d no_tls=%d exposed_port=%d default_token=%d no_gossip_encrypt=%d dev_mode=%d\n",
-		r.Summary.NoACL, r.Summary.NoTLS, r.Summary.ExposedPort,
-		r.Summary.DefaultToken, r.Summary.NoEncryptGossip, r.Summary.DevMode)
+	fmt.Fprintf(&b, "  Summary: no_acl=%d no_gossip_encrypt=%d no_tls=%d exposed_port=%d dev_mode=%d\n",
+		r.Summary.NoACL, r.Summary.NoGossipEncrypt, r.Summary.NoTLS,
+		r.Summary.ExposedPort, r.Summary.DevMode)
 
 	return b.String()
 }
