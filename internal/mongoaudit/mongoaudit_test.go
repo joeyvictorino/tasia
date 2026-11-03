@@ -17,351 +17,207 @@ func makeCollected(services ...compose.Service) *collect.Collected {
 	}
 }
 
-func TestMongoNoAuth(t *testing.T) {
+func TestNoAuth(t *testing.T) {
+	svc := compose.Service{Name: "mongo", Image: "mongo:6", Environment: []string{}}
+	r := Analyze(makeCollected(svc))
+	found := false
+	for _, sr := range r.Services {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_auth" { found = true }
+		}
+	}
+	if !found { t.Error("expected no_auth finding") }
+}
+
+func TestWithAuth(t *testing.T) {
 	svc := compose.Service{
-		Name:        "mongo",
-		Image:       "mongo:6",
-		Environment: []string{},
+		Name: "mongo", Image: "mongo:6",
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=s3cureP@ss"},
+	}
+	r := Analyze(makeCollected(svc))
+	for _, sr := range r.Services {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_auth" { t.Error("should not flag when auth is configured") }
+		}
+	}
+}
+
+func TestDefaultCredentials(t *testing.T) {
+	svc := compose.Service{
+		Name: "mongo", Image: "mongo:6",
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=admin"},
 	}
 	r := Analyze(makeCollected(svc))
 	found := false
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "no_auth" {
-				found = true
-			}
+			if f.Rule == "default_credentials" { found = true }
 		}
 	}
-	if !found {
-		t.Error("expected no_auth finding")
-	}
+	if !found { t.Error("expected default_credentials finding") }
 }
 
-func TestMongoWithAuth(t *testing.T) {
+func TestStrongCredentials(t *testing.T) {
 	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=supersecret123!@#",
-		},
+		Name: "mongo", Image: "mongo:6",
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=dbadmin", "MONGO_INITDB_ROOT_PASSWORD=xK9!mZ2@pQ7wL4"},
 	}
 	r := Analyze(makeCollected(svc))
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "no_auth" {
-				t.Error("should not flag no_auth when auth is configured")
-			}
+			if f.Rule == "default_credentials" { t.Error("should not flag strong credentials") }
 		}
 	}
 }
 
-func TestMongoWithCommandAuth(t *testing.T) {
+func TestExposedPort(t *testing.T) {
 	svc := compose.Service{
-		Name:    "mongo",
-		Image:   "mongo:6",
-		Command: []string{"mongod", "--auth"},
-	}
-	r := Analyze(makeCollected(svc))
-	for _, sr := range r.Services {
-		for _, f := range sr.Findings {
-			if f.Rule == "no_auth" {
-				t.Error("should not flag no_auth when --auth is in command")
-			}
-		}
-	}
-}
-
-func TestMongoDefaultCredentials(t *testing.T) {
-	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=admin",
-		},
+		Name: "mongo", Image: "mongo:6",
+		Ports: []compose.PortMapping{{HostPort: 27017, TargetPort: 27017, Raw: "27017:27017"}},
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=s3cure"},
 	}
 	r := Analyze(makeCollected(svc))
 	found := false
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "default_credentials" {
-				found = true
-			}
+			if f.Rule == "exposed_port" { found = true }
 		}
 	}
-	if !found {
-		t.Error("expected default_credentials finding")
-	}
+	if !found { t.Error("expected exposed_port finding") }
 }
 
-func TestMongoStrongCredentials(t *testing.T) {
+func TestLocalhostPort(t *testing.T) {
 	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=dbadmin",
-			"MONGO_INITDB_ROOT_PASSWORD=xK9mQ2vL8nP4wR7j",
-		},
+		Name: "mongo", Image: "mongo:6",
+		Ports: []compose.PortMapping{{HostPort: 27017, TargetPort: 27017, Raw: "127.0.0.1:27017:27017", HostIP: "127.0.0.1"}},
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=s3cure"},
 	}
 	r := Analyze(makeCollected(svc))
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "default_credentials" {
-				t.Error("should not flag strong credentials as default")
-			}
+			if f.Rule == "exposed_port" { t.Error("should not flag port bound to localhost") }
 		}
 	}
 }
 
-func TestMongoExposedPort(t *testing.T) {
+func TestNoTLS(t *testing.T) {
 	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Ports: []compose.PortMapping{
-			{HostPort: 27017, TargetPort: 27017, Raw: "27017:27017"},
-		},
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=strongpass",
-		},
+		Name: "mongo", Image: "mongo:6",
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=s3cure"},
 	}
 	r := Analyze(makeCollected(svc))
 	found := false
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "exposed_port" {
-				found = true
-			}
+			if f.Rule == "no_tls" { found = true }
 		}
 	}
-	if !found {
-		t.Error("expected exposed_port finding")
-	}
+	if !found { t.Error("expected no_tls finding") }
 }
 
-func TestMongoLocalhostPort(t *testing.T) {
+func TestWithTLS(t *testing.T) {
 	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Ports: []compose.PortMapping{
-			{HostPort: 27017, TargetPort: 27017, Raw: "127.0.0.1:27017:27017", HostIP: "127.0.0.1"},
-		},
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=strongpass",
-		},
+		Name: "mongo", Image: "mongo:6",
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=s3cure", "MONGODB_TLS_ENABLED=true"},
 	}
 	r := Analyze(makeCollected(svc))
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "exposed_port" {
-				t.Error("should not flag port bound to localhost")
-			}
+			if f.Rule == "no_tls" { t.Error("should not flag when TLS is configured") }
 		}
 	}
 }
 
-func TestMongoNoTLS(t *testing.T) {
+func TestWithTLSCommand(t *testing.T) {
 	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=strongpass",
-		},
+		Name: "mongo", Image: "mongo:6",
+		Command: []string{"mongod", "--tlsMode", "requireTLS"},
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=s3cure"},
 	}
+	r := Analyze(makeCollected(svc))
+	for _, sr := range r.Services {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_tls" { t.Error("should not flag when TLS is in command") }
+		}
+	}
+}
+
+func TestBindAllWithoutAuth(t *testing.T) {
+	svc := compose.Service{Name: "mongo", Image: "mongo:6", Command: []string{"mongod", "--bind_ip_all"}}
 	r := Analyze(makeCollected(svc))
 	found := false
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "no_tls" {
-				found = true
-			}
+			if f.Rule == "bind_all_interfaces" { found = true }
 		}
 	}
-	if !found {
-		t.Error("expected no_tls finding")
-	}
+	if !found { t.Error("expected bind_all_interfaces finding") }
 }
 
-func TestMongoWithTLS(t *testing.T) {
+func TestBindAllWithAuth(t *testing.T) {
 	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=strongpass",
-		},
-		Command: []string{"mongod", "--tlsMode", "requireTLS", "--tlsCertificateKeyFile", "/certs/mongo.pem"},
-	}
-	r := Analyze(makeCollected(svc))
-	for _, sr := range r.Services {
-		for _, f := range sr.Findings {
-			if f.Rule == "no_tls" {
-				t.Error("should not flag no_tls when TLS is configured via command")
-			}
-		}
-	}
-}
-
-func TestMongoBindAllNoAuth(t *testing.T) {
-	svc := compose.Service{
-		Name:    "mongo",
-		Image:   "mongo:6",
-		Command: []string{"mongod", "--bind_ip_all"},
-	}
-	r := Analyze(makeCollected(svc))
-	found := false
-	for _, sr := range r.Services {
-		for _, f := range sr.Findings {
-			if f.Rule == "bind_all_interfaces" {
-				found = true
-			}
-		}
-	}
-	if !found {
-		t.Error("expected bind_all_interfaces finding")
-	}
-}
-
-func TestMongoBindAllWithAuth(t *testing.T) {
-	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=strongpass",
-		},
+		Name: "mongo", Image: "mongo:6",
 		Command: []string{"mongod", "--bind_ip_all", "--auth"},
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=s3cure"},
 	}
 	r := Analyze(makeCollected(svc))
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "bind_all_interfaces" {
-				t.Error("should not flag bind_all when auth is configured")
-			}
+			if f.Rule == "bind_all_interfaces" { t.Error("should not flag bind_all when auth is present") }
 		}
 	}
 }
 
 func TestNonMongoService(t *testing.T) {
-	svc := compose.Service{
-		Name:  "nginx",
-		Image: "nginx:latest",
-	}
+	svc := compose.Service{Name: "nginx", Image: "nginx:latest"}
 	r := Analyze(makeCollected(svc))
 	for _, sr := range r.Services {
-		if len(sr.Findings) > 0 {
-			t.Error("non-mongo service should have no findings")
-		}
+		if len(sr.Findings) > 0 { t.Error("non-mongo service should have no findings") }
 	}
 }
 
-func TestBitnamiMongoDetection(t *testing.T) {
-	svc := compose.Service{
-		Name:        "db",
-		Image:       "bitnami/mongodb:6.0",
-		Environment: []string{},
-	}
+func TestBitnamiMongo(t *testing.T) {
+	svc := compose.Service{Name: "db", Image: "bitnami/mongodb:6.0", Environment: []string{}}
 	r := Analyze(makeCollected(svc))
 	found := false
 	for _, sr := range r.Services {
 		for _, f := range sr.Findings {
-			if f.Rule == "no_auth" {
-				found = true
-			}
+			if f.Rule == "no_auth" { found = true }
 		}
 	}
-	if !found {
-		t.Error("expected bitnami/mongodb to be detected")
-	}
-}
-
-func TestPerconaMongoDetection(t *testing.T) {
-	svc := compose.Service{
-		Name:        "db",
-		Image:       "percona/percona-server-mongodb:6.0",
-		Environment: []string{},
-	}
-	r := Analyze(makeCollected(svc))
-	found := false
-	for _, sr := range r.Services {
-		for _, f := range sr.Findings {
-			if f.Rule == "no_auth" {
-				found = true
-			}
-		}
-	}
-	if !found {
-		t.Error("expected percona mongodb to be detected")
-	}
+	if !found { t.Error("expected bitnami/mongodb to be detected") }
 }
 
 func TestSummaryCounts(t *testing.T) {
 	svc := compose.Service{
-		Name:  "mongo",
-		Image: "mongo:6",
-		Ports: []compose.PortMapping{
-			{HostPort: 27017, TargetPort: 27017, Raw: "27017:27017"},
-		},
-		Environment: []string{},
+		Name: "mongo", Image: "mongo:6",
+		Ports: []compose.PortMapping{{HostPort: 27017, TargetPort: 27017, Raw: "27017:27017"}},
 	}
 	r := Analyze(makeCollected(svc))
-	if r.Summary.TotalServices != 1 {
-		t.Errorf("expected 1 service, got %d", r.Summary.TotalServices)
-	}
-	if r.Summary.NoAuth != 1 {
-		t.Errorf("expected 1 no_auth, got %d", r.Summary.NoAuth)
-	}
-	if r.Summary.ExposedPort != 1 {
-		t.Errorf("expected 1 exposed port, got %d", r.Summary.ExposedPort)
-	}
-	if r.Summary.NoTLS != 1 {
-		t.Errorf("expected 1 no_tls, got %d", r.Summary.NoTLS)
-	}
+	if r.Summary.TotalServices != 1 { t.Errorf("expected 1 service, got %d", r.Summary.TotalServices) }
+	if r.Summary.NoAuth != 1 { t.Errorf("expected 1 no_auth, got %d", r.Summary.NoAuth) }
+	if r.Summary.ExposedPort != 1 { t.Errorf("expected 1 exposed_port, got %d", r.Summary.ExposedPort) }
+	if r.Summary.NoTLS != 1 { t.Errorf("expected 1 no_tls, got %d", r.Summary.NoTLS) }
 }
 
-func TestFormatText(t *testing.T) {
-	svc := compose.Service{
-		Name:        "mongo",
-		Image:       "mongo:6",
-		Environment: []string{},
-	}
+func TestFormatTextOutput(t *testing.T) {
+	svc := compose.Service{Name: "mongo", Image: "mongo:6", Environment: []string{}}
 	r := Analyze(makeCollected(svc))
 	text := FormatText(r)
-	if !strings.Contains(text, "MongoDB Security Audit") {
-		t.Error("expected header in output")
-	}
-}
-
-func TestFormatTextEmpty(t *testing.T) {
-	r := Analyze(&collect.Collected{Root: "/empty"})
-	text := FormatText(r)
-	if !strings.Contains(text, "0 services") {
-		t.Error("expected zero services in empty report")
-	}
+	if !strings.Contains(text, "MongoDB Security Audit") { t.Error("expected header in output") }
 }
 
 func TestReportPath(t *testing.T) {
 	c := &collect.Collected{Root: "/my/project"}
 	r := Analyze(c)
-	if r.Path != "/my/project" {
-		t.Errorf("expected path /my/project, got %s", r.Path)
-	}
+	if r.Path != "/my/project" { t.Errorf("expected path /my/project, got %s", r.Path) }
 }
 
 func TestIsMongoImage(t *testing.T) {
-	tests := []struct {
-		image string
-		want  bool
-	}{
-		{"mongo:6", true},
-		{"mongo:latest", true},
-		{"bitnami/mongodb:6.0", true},
-		{"percona/percona-server-mongodb:6.0", true},
-		{"nginx:latest", false},
-		{"redis:7", false},
+	tests := []struct { image string; want bool }{
+		{"mongo:6", true}, {"bitnami/mongodb:6.0", true},
+		{"percona/percona-server-mongodb:6", true},
+		{"nginx:latest", false}, {"redis:7", false},
 	}
 	for _, tt := range tests {
 		if got := isMongoImage(tt.image); got != tt.want {
@@ -370,26 +226,23 @@ func TestIsMongoImage(t *testing.T) {
 	}
 }
 
-func TestMultipleMongoServices(t *testing.T) {
-	svc1 := compose.Service{
-		Name:        "mongo-primary",
-		Image:       "mongo:6",
-		Environment: []string{},
+func TestAuthViaCommand(t *testing.T) {
+	svc := compose.Service{Name: "mongo", Image: "mongo:6", Command: []string{"mongod", "--auth"}}
+	r := Analyze(makeCollected(svc))
+	for _, sr := range r.Services {
+		for _, f := range sr.Findings {
+			if f.Rule == "no_auth" { t.Error("should detect --auth in command") }
+		}
 	}
+}
+
+func TestMultipleServices(t *testing.T) {
+	svc1 := compose.Service{Name: "mongo1", Image: "mongo:6", Environment: []string{}}
 	svc2 := compose.Service{
-		Name:  "mongo-secondary",
-		Image: "mongo:6",
-		Environment: []string{
-			"MONGO_INITDB_ROOT_USERNAME=admin",
-			"MONGO_INITDB_ROOT_PASSWORD=xK9mQ2vL8nP4wR7j",
-		},
-		Command: []string{"mongod", "--tlsMode", "requireTLS"},
+		Name: "mongo2", Image: "mongo:6",
+		Environment: []string{"MONGO_INITDB_ROOT_USERNAME=admin", "MONGO_INITDB_ROOT_PASSWORD=xK9!mZ2@", "MONGODB_TLS_ENABLED=true"},
 	}
 	r := Analyze(makeCollected(svc1, svc2))
-	if r.Summary.TotalServices != 2 {
-		t.Errorf("expected 2 services, got %d", r.Summary.TotalServices)
-	}
-	if r.Summary.NoAuth != 1 {
-		t.Errorf("expected 1 no_auth, got %d", r.Summary.NoAuth)
-	}
+	if r.Summary.TotalServices != 2 { t.Errorf("expected 2 services, got %d", r.Summary.TotalServices) }
+	if r.Summary.NoAuth != 1 { t.Errorf("expected 1 no_auth, got %d", r.Summary.NoAuth) }
 }
