@@ -428,6 +428,10 @@ func Run(args []string) error {
 		return runTimezoneleak(args[1:])
 	case "logforward":
 		return runLogforward(args[1:])
+	case "cronjob":
+		return runCronjob(args[1:])
+	case "filedescriptor":
+		return runFiledescriptor(args[1:])
 	case "dnsleak":
 		return runDnsleak(args[1:])
 	case "completions", "completion":
