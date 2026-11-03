@@ -11,7 +11,7 @@ import (
 func makeCollected(services ...compose.Service) *collect.Collected {
 	return &collect.Collected{
 		Root: "/test",
-		ComposeFiles: []compose.ComposeFile{
+		ComposeFiles: []compose.File{
 			{Path: "docker-compose.yml", Services: services},
 		},
 	}

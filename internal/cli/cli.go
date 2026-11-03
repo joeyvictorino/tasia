@@ -550,6 +550,10 @@ func Run(args []string) error {
 		return runDeserializationaudit(args[1:])
 	case "deporder":
 		return runDeporder(args[1:])
+	case "kafkaaudit":
+		return runKafkaaudit(args[1:])
+	case "elasticaudit":
+		return runElasticaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":

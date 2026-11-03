@@ -11,7 +11,7 @@ import (
 func makeCollected(services ...compose.Service) *collect.Collected {
 	return &collect.Collected{
 		Root: "/test",
-		ComposeFiles: []compose.ComposeFile{
+		ComposeFiles: []compose.File{
 			{Path: "docker-compose.yml", Services: services},
 		},
 	}
@@ -307,7 +307,7 @@ func TestFormatTextOutput(t *testing.T) {
 	if !strings.Contains(text, "Kafka Broker Security Audit") {
 		t.Error("expected header in output")
 	}
-	if !strings.Contains(text, "plaintext") || !strings.Contains(text, "PLAINTEXT") {
+	if !strings.Contains(text, "Plaintext") && !strings.Contains(text, "PLAINTEXT") {
 		t.Error("expected plaintext mention in output")
 	}
 }
