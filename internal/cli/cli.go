@@ -564,6 +564,10 @@ func Run(args []string) error {
 		return runMongoaudit(args[1:])
 	case "rabbitmqaudit":
 		return runRabbitmqaudit(args[1:])
+	case "postgresaudit":
+		return runPostgresaudit(args[1:])
+	case "mysqlaudit":
+		return runMysqlaudit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
