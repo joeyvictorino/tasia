@@ -386,6 +386,10 @@ func Run(args []string) error {
 		return runUserlookup(args[1:])
 	case "capbound":
 		return runCapbound(args[1:])
+	case "pidlimit":
+		return runPidlimit(args[1:])
+	case "swaplimit":
+		return runSwaplimit(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
