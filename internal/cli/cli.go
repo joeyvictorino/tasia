@@ -378,6 +378,10 @@ func Run(args []string) error {
 		return runProberesist(args[1:])
 	case "cronaudit":
 		return runCronaudit(args[1:])
+	case "ipblock":
+		return runIpblock(args[1:])
+	case "certpin":
+		return runCertpin(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
