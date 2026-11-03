@@ -594,6 +594,10 @@ func Run(args []string) error {
 		return runCassandraaudit(args[1:])
 	case "vpnaudit":
 		return runVpnaudit(args[1:])
+	case "env-template", "envtemplate":
+		return runEnvtemplate(args[1:])
+	case "trust-chain", "trustchain":
+		return runTrustchain(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
