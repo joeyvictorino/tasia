@@ -406,6 +406,10 @@ func Run(args []string) error {
 		return runFdlimit(args[1:])
 	case "loopdev":
 		return runLoopdev(args[1:])
+	case "storagedriver":
+		return runStoragedriver(args[1:])
+	case "networkisolation":
+		return runNetworkisolation(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
