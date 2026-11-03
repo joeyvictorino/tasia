@@ -446,6 +446,10 @@ func Run(args []string) error {
 		return runCoredump(args[1:])
 	case "debugflag":
 		return runDebugflag(args[1:])
+	case "depguard":
+		return runDepguard(args[1:])
+	case "cmdinject":
+		return runCmdinject(args[1:])
 	case "timesync":
 		return runTimesync(args[1:])
 	case "completions", "completion":
