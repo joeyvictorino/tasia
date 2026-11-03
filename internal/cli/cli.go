@@ -418,6 +418,10 @@ func Run(args []string) error {
 		return runPtraceprotect(args[1:])
 	case "tmpwatch":
 		return runTmpwatch(args[1:])
+	case "envexpand":
+		return runEnvexpand(args[1:])
+	case "volperm":
+		return runVolperm(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
