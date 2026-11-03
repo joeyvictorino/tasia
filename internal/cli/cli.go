@@ -434,6 +434,10 @@ func Run(args []string) error {
 		return runFiledescriptor(args[1:])
 	case "dnsleak":
 		return runDnsleak(args[1:])
+	case "swapusage":
+		return runSwapusage(args[1:])
+	case "coredump":
+		return runCoredump(args[1:])
 	case "completions", "completion":
 		return runCompletions(args[1:])
 	case "version", "--version", "-v":
